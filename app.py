@@ -331,9 +331,11 @@ def call_gcis_api(base_url: str, tax_id: str, top: int | None = None):
 
     try:
         resp = requests.get(base_url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as e:
+        print(f"[GCIS_API_ERROR] type=Timeout detail={e} url={base_url}", flush=True)
         return False, None, "查詢外部政府資料平臺逾時，請稍後再試。"
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"[GCIS_API_ERROR] type={type(e).__name__} detail={e} url={base_url}", flush=True)
         return False, None, "無法連線至外部政府資料平臺，請稍後再試。"
 
     if resp.status_code != 200:
@@ -436,9 +438,11 @@ def call_gcis_keyword_search_api(company_name_query: str, top: int = 20):
 
     try:
         resp = requests.get(API_BASE_KEYWORD_SEARCH, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as e:
+        print(f"[GCIS_API_ERROR] type=Timeout detail={e} url={API_BASE_KEYWORD_SEARCH}", flush=True)
         return False, None, "查詢外部政府資料平臺逾時，請稍後再試。"
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"[GCIS_API_ERROR] type={type(e).__name__} detail={e} url={API_BASE_KEYWORD_SEARCH}", flush=True)
         return False, None, "無法連線至外部政府資料平臺，請稍後再試。"
 
     if resp.status_code != 200:

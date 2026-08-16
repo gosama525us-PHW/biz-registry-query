@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登入 - 工商登記查詢系統</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="site-icon" aria-hidden="true"><span></span><span></span><span></span></span>工商登記查詢系統</h1>
+    <p class="subtitle">請先登入（僅供公司內部人員使用）</p>
+  </header>
+
+  <main>
+    <section class="query-box auth-box">
+      <form method="post" action="{{ url_for('login') }}" autocomplete="off">
+        <div class="auth-field">
+          <label for="username">帳號</label>
+          <div class="input-row">
+            <input
+              type="text"
+              id="username"
+              name="username"
+              maxlength="50"
+              autocomplete="username"
+              required
+              autofocus
+            >
+          </div>
+        </div>
+        <div class="auth-field">
+          <label for="password">密碼</label>
+          <div class="input-row">
+            <input
+              type="password"
+              id="password"
+              name="password"
+              maxlength="200"
+              autocomplete="current-password"
+              required
+            >
+            <button type="submit">登入</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    {% if error %}
+      <section class="message error">
+        <p>{{ error }}</p>
+      </section>
+    {% endif %}
+  </main>
+
+  <footer class="site-footer">
+    <p>資料來源：經濟部商業發展署 商工行政資料開放平臺（data.gcis.nat.gov.tw）</p>
+    <p class="disclaimer">本系統僅供公司內部查詢使用，未經授權請勿嘗試登入。</p>
+  </footer>
+</body>
+</html>

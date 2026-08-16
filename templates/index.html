@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工商登記查詢系統</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  {% if print_date %}
+    <!--
+      列印日期：比照 CEO 提供之官方頁面 PDF（input/商工登記頁面.pdf）最上方
+      「列印日期:115-08-13」一行，置於主標題列之前。此日期由伺服器於本次查詢
+      當下動態產生（app.py 的 format_print_date()，非寫死固定文字），僅在有
+      查詢結果時顯示，比照 PDF 僅查詢結果頁才有這行、首頁未查詢時不顯示。
+    -->
+    <p class="print-date">列印日期:{{ print_date }}</p>
+  {% endif %}
+  <header class="site-header">
+    <h1><span class="site-icon" aria-hidden="true"><span></span><span></span><span></span></span>工商登記查詢系統</h1>
+    <p class="subtitle">輸入統一編號，查詢公司商工登記公示資料（僅供公司內部使用）</p>
+  </header>
+
+  <!--
+    登出功能（新增）：本頁（首頁／查詢結果頁）已由後端 @login_required 保護，
+    僅登入後才可到達，故此處不需額外判斷登入狀態即可顯示登出按鈕。
+    採 POST 表單而非純連結，避免登出動作被 GET 連結／預取（prefetch）意外觸發。
+  -->
+  <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+    <button type="submit" class="logout-btn">登出</button>
+  </form>
+
+  <main>
+    <section class="query-box">
+      <form method="post" action="{{ url_for('query') }}" autocomplete="off">
+        <label for="tax_id">統一編號（8 位數字）</label>
+        <div class="input-row">
+          <input
+            type="text"
+            id="tax_id"
+            name="tax_id"
+            value="{{ query_value }}"
+            maxlength="20"
+            placeholder="例如：22099131"
+            pattern="\d{8}"
+            title="請輸入 8 位數字"
+            required
+          >
+          <button type="submit">查詢</button>
+        </div>
+        <fieldset class="depth-row">
+          <legend>查詢深度</legend>
+          <label class="radio-label">
+            <input
+              type="radio"
+              name="query_depth"
+              value="1"
+              {% if query_depth_value == "1" %}checked{% endif %}
+            >
+            僅查詢本公司
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              name="query_depth"
+              value="2"
+              {% if query_depth_value == "2" %}checked{% endif %}
+            >
+            查詢董監事所代表法人（含其董監事）
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              name="query_depth"
+              value="3"
+              {% if query_depth_value == "3" %}checked{% endif %}
+            >
+            查詢至代表法人的代表法人（含各層董監事）
+          </label>
+        </fieldset>
+      </form>
+    </section>
+
+    {% if error %}
+      <section class="message error">
+        <p>{{ error }}</p>
+      </section>
+    {% endif %}
+
+    {% if result %}
+      <section class="result-box">
+        <h2>{{ result.company_name }}</h2>
+
+        <!--
+          公司基本資料：比照 CEO 提供之官方頁面 PDF（input/商工登記頁面.pdf）版面，
+          改為「欄位名稱：值」垂直清單樣式（非粗框線表格）。欄位順序與中文標籤沿用
+          PDF 原文（登記現況／代表人姓名／公司所在地／登記機關／最後核准變更日期等），
+          資料來源與既有邏輯完全不變。
+
+          重要：PDF 上另有「章程所訂外文公司名稱」「公司所在地旁『同地址登記現況公司
+          家數』連結」「複數表決權特別股」「對特定事項具否決權特別股」「特別股股東
+          當選權利限制」「完成勞動權益講習」等欄位，因本系統目前串接的官方 API
+          （見 api_research.md）並無對應真實資料來源，依 CEO 指示一律不呈現、不得
+          以空白或「無資料」文字填充，故版面上刻意省略，非遺漏。
+        -->
+        <h3 class="section-title">公司基本資料</h3>
+        <dl class="info-list">
+          <div class="info-row"><dt>統一編號</dt><dd>{{ result.tax_id }}</dd></div>
+          <div class="info-row"><dt>登記現況</dt><dd>{{ result.status }}</dd></div>
+          <div class="info-row"><dt>公司名稱</dt><dd>{{ result.company_name }}</dd></div>
+          <div class="info-row"><dt>資本總額(元)</dt><dd>{{ result.capital_stock }}</dd></div>
+          <div class="info-row"><dt>實收資本額(元)</dt><dd>{{ result.paid_in_capital }}</dd></div>
+          <div class="info-row"><dt>每股金額(元)</dt><dd>{{ result.share_val }}</dd></div>
+          <div class="info-row"><dt>已發行股份總數(股)</dt><dd>{{ result.equity_amt }}</dd></div>
+          <div class="info-row"><dt>代表人姓名</dt><dd>{{ result.responsible_name }}</dd></div>
+          <div class="info-row"><dt>公司所在地</dt><dd>{{ result.location }}</dd></div>
+          <div class="info-row"><dt>登記機關</dt><dd>{{ result.register_org }}</dd></div>
+          <div class="info-row"><dt>核准設立日期</dt><dd>{{ result.setup_date }}</dd></div>
+          <div class="info-row"><dt>最後核准變更日期</dt><dd>{{ result.last_change_date }}</dd></div>
+          <div class="info-row">
+            <dt>所營事業資料</dt>
+            <dd>
+              {% if result.business_items %}
+                <ul class="business-list">
+                  {% for item in result.business_items %}
+                    <li><span class="code">{{ item.code }}</span> {{ item.desc }}</li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <span class="no-data">查無所營事業資料。</span>
+              {% endif %}
+            </dd>
+          </div>
+        </dl>
+
+        <hr class="section-divider">
+
+        <h3 class="section-title">董監事資料(序號依據公司基本資料內容顯示)</h3>
+        {% if result.director_items %}
+          <table class="list-table">
+            <thead>
+              <tr><th>序號</th><th>職稱</th><th>姓名</th><th>所代表法人</th><th>持有股份數(股)</th></tr>
+            </thead>
+            <tbody>
+              {% for d in result.director_items %}
+                <tr>
+                  <td>{{ "%04d" | format(loop.index) }}</td>
+                  <td>{{ d.position }}</td>
+                  <td>{{ d.name }}</td>
+                  <td>{% if d.juristic_person %}<span class="visual-link">{{ d.juristic_person }}</span>{% else %}－{% endif %}</td>
+                  <td>{{ d.shareholding }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="no-data">查無董監事資料。</p>
+        {% endif %}
+
+        <hr class="section-divider">
+
+        <h3 class="section-title">經理人資料 <span class="badge-local">本地資料庫・非即時查詢</span></h3>
+        <p class="data-source-note">
+          經理人資料來源：定期更新之本地資料庫{% if result.managers.updated_at %}（資料時效：本地資料庫最後建置／更新時間約至 {{ result.managers.updated_at }}）{% endif %}，非即時查詢，如需最新資料請洽公司登記機關。
+        </p>
+        {% if result.managers.status == "ok" %}
+          {% if result.managers.records %}
+            <table class="list-table">
+              <thead>
+                <tr><th>序號</th><th>姓名</th><th>到職日期</th><th>備註</th></tr>
+              </thead>
+              <tbody>
+                {% for m in result.managers.records %}
+                  <tr>
+                    <td>{{ "%04d" | format(loop.index) }}</td>
+                    <td>{{ m.name }}</td>
+                    <td>{{ m.onboard_date }}</td>
+                    <td>{{ m.note if m.note else "－" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="no-data">查無經理人資料。</p>
+          {% endif %}
+        {% else %}
+          <p class="no-data">{{ result.managers.message }}</p>
+        {% endif %}
+
+        {% if result.juristic_persons %}
+          <!--
+            以下為本系統額外提供之附加功能（董監事「所代表法人」工商登記反查／
+            三層查詢深度），非官方頁面 PDF 原有內容，故置於頁面最下方，與上方
+            比照官方頁面版面之四大區塊以虛線區隔，銜接呈現。功能邏輯完全未變動，
+            僅套用與上方一致的簡潔藍色系視覺風格。
+          -->
+          <hr class="section-divider">
+
+          <h3 class="section-title">董監事所代表法人 工商登記查詢結果</h3>
+          <p class="data-source-note">
+            以下為依董監事資料「所代表法人」欄位原文，額外查詢「公司登記關鍵字查詢」API 之結果；
+            該 API 為字串包含比對，本系統已於伺服器端做完全比對過濾，僅顯示名稱完全相符者，
+            若顯示「查無工商登記資料」，可能為政府機關、財團法人等非公司登記主體，或名稱寫法有差異，非系統錯誤。
+          </p>
+          {% if result.juristic_persons.total_count == 0 %}
+            <p class="no-data">本次查詢之董監事資料中，「所代表法人」欄位皆為空值，無需額外查詢。</p>
+          {% else %}
+            {% if result.juristic_persons.capped_count > 0 %}
+              <p class="message-note">
+                去重後共 {{ result.juristic_persons.total_count }} 筆不同法人，
+                其中 {{ result.juristic_persons.capped_count }} 筆因已達本次查詢防禦性上限
+                （200 筆，含第二、三層合計），為保護系統穩定性標示為未查詢，
+                非資料遺漏。
+              </p>
+            {% endif %}
+            {% for jp in result.juristic_persons.results %}
+              <div class="juristic-person-block">
+                <h4>{{ jp.name }}</h4>
+                {% if jp.status == "found" %}
+                  <table class="result-table">
+                    <tbody>
+                      <tr><th>統一編號</th><td>{{ jp.data.tax_id }}</td></tr>
+                      <tr><th>公司名稱</th><td>{{ jp.data.company_name }}</td></tr>
+                      <tr><th>公司狀態</th><td>{{ jp.data.status }}</td></tr>
+                      <tr><th>負責人</th><td>{{ jp.data.responsible_name }}</td></tr>
+                      <tr><th>資本總額</th><td>{{ jp.data.capital_stock }}</td></tr>
+                      <tr><th>實收資本額</th><td>{{ jp.data.paid_in_capital }}</td></tr>
+                      <tr><th>登記地址</th><td>{{ jp.data.location }}</td></tr>
+                    </tbody>
+                  </table>
+
+                  <h5>董監事資料</h5>
+                  {% if jp.data.director_items %}
+                    <table class="list-table">
+                      <thead>
+                        <tr><th>職稱</th><th>姓名</th><th>所代表法人</th><th>持股數</th></tr>
+                      </thead>
+                      <tbody>
+                        {% for d in jp.data.director_items %}
+                          <tr>
+                            <td>{{ d.position }}</td>
+                            <td>{{ d.name }}</td>
+                            <td>{% if d.juristic_person %}<span class="visual-link">{{ d.juristic_person }}</span>{% else %}－{% endif %}</td>
+                            <td>{{ d.shareholding }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% else %}
+                    <p class="no-data">查無董監事資料。</p>
+                  {% endif %}
+
+                  {% if jp.data.sub_juristic_persons %}
+                    {#
+                      第三層（所代表法人之所代表法人）。深度上限到此為止：
+                      以下區塊「絕對不可」再往下渲染任何「查詢所代表法人」的巢狀邏輯，
+                      第三層法人僅顯示基本資料＋自身董監事清單，不再展開第四層。
+                    #}
+                    <div class="sub-juristic-persons">
+                      <h5>所代表法人之所代表法人 工商登記查詢結果（第三層）</h5>
+                      <p class="data-source-note">
+                        以下為「{{ jp.name }}」董監事資料「所代表法人」欄位原文，額外查詢之工商登記結果，
+                        比對機制與過濾方式與第二層相同（見上方說明），僅查至第三層，不再往下展開。
+                      </p>
+                      {% if jp.data.sub_juristic_persons.total_count == 0 %}
+                        <p class="no-data">「{{ jp.name }}」之董監事資料中，「所代表法人」欄位皆為空值，無需額外查詢。</p>
+                      {% else %}
+                        {% if jp.data.sub_juristic_persons.capped_count > 0 %}
+                          <p class="message-note">
+                            去重後共 {{ jp.data.sub_juristic_persons.total_count }} 筆不同法人，
+                            其中 {{ jp.data.sub_juristic_persons.capped_count }} 筆因已達本次查詢防禦性上限，
+                            為保護系統穩定性標示為未查詢，非資料遺漏。
+                          </p>
+                        {% endif %}
+                        {% for jp3 in jp.data.sub_juristic_persons.results %}
+                          <div class="juristic-person-block juristic-person-block--nested">
+                            <h5>{{ jp3.name }}</h5>
+                            {% if jp3.status == "found" %}
+                              <table class="result-table">
+                                <tbody>
+                                  <tr><th>統一編號</th><td>{{ jp3.data.tax_id }}</td></tr>
+                                  <tr><th>公司名稱</th><td>{{ jp3.data.company_name }}</td></tr>
+                                  <tr><th>公司狀態</th><td>{{ jp3.data.status }}</td></tr>
+                                  <tr><th>負責人</th><td>{{ jp3.data.responsible_name }}</td></tr>
+                                  <tr><th>資本總額</th><td>{{ jp3.data.capital_stock }}</td></tr>
+                                  <tr><th>實收資本額</th><td>{{ jp3.data.paid_in_capital }}</td></tr>
+                                  <tr><th>登記地址</th><td>{{ jp3.data.location }}</td></tr>
+                                </tbody>
+                              </table>
+
+                              <h6>董監事資料</h6>
+                              {% if jp3.data.director_items %}
+                                <table class="list-table">
+                                  <thead>
+                                    <tr><th>職稱</th><th>姓名</th><th>所代表法人</th><th>持股數</th></tr>
+                                  </thead>
+                                  <tbody>
+                                    {% for d3 in jp3.data.director_items %}
+                                      <tr>
+                                        <td>{{ d3.position }}</td>
+                                        <td>{{ d3.name }}</td>
+                                        <td>{% if d3.juristic_person %}<span class="visual-link">{{ d3.juristic_person }}</span>{% else %}－{% endif %}</td>
+                                        <td>{{ d3.shareholding }}</td>
+                                      </tr>
+                                    {% endfor %}
+                                  </tbody>
+                                </table>
+                              {% else %}
+                                <p class="no-data">查無董監事資料。</p>
+                              {% endif %}
+                              <!-- 深度上限：第三層到此結束，不渲染第四層，不得於此處新增任何 sub_juristic_persons 迴圈 -->
+                            {% else %}
+                              <p class="no-data">{{ jp3.message }}</p>
+                            {% endif %}
+                          </div>
+                        {% endfor %}
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                {% else %}
+                  <p class="no-data">{{ jp.message }}</p>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% endif %}
+        {% endif %}
+      </section>
+    {% endif %}
+  </main>
+
+  <footer class="site-footer">
+    <p>資料來源：經濟部商業發展署 商工行政資料開放平臺（data.gcis.nat.gov.tw）</p>
+    <p class="disclaimer">本系統僅供公司內部查詢使用，資料以政府開放資料平臺公示內容為準，如有疑義請以官方公示資訊為準。</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# 環境變數與敏感設定（絕對不可提交版控——內含帳密雜湊、TOTP secret、
+# Flask session 金鑰等本機測試用機密設定）
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# 測試產物 / 截圖（非程式成果，不應進版控）
+screenshots/
+
+# 編輯器 / 作業系統雜項檔案
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

@@ -1,0 +1,503 @@
+/*
+  視覺樣式比照 CEO 提供之官方頁面 PDF（input/商工登記頁面.pdf）
+  本次僅調整視覺樣式（配色、字體、有無卡片邊框等），不涉及任何後端邏輯、
+  資料處理或安全防護機制。對照 PDF 之逐項修正說明見各區塊註解與
+  audit/biz_registry_query/dev_test_report_visual_style_match_pdf.md。
+*/
+
+* {
+  box-sizing: border-box;
+}
+
+/* [問題1][問題9] 背景改純白色；字體改以襯線字體（明體／細明體）為主，
+   sans-serif 僅作最後備援 */
+body {
+  font-family: "PMingLiu", "MingLiU", "新細明體", Georgia, "Times New Roman", serif;
+  background-color: #ffffff;
+  color: #000000;
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
+
+/* 列印日期：比照 PDF 最上方「列印日期:115-08-13」，純文字、不加粗、不上色
+   （沿用 body 預設黑字），僅調整留白間距，置於主標題列之前 */
+.print-date {
+  margin: 16px 16px 0 16px;
+  color: #000000;
+  font-weight: normal;
+  font-size: 0.95rem;
+}
+
+/* [問題3] 主標題區：拿掉深色滿版 banner 背景，改為白底上的藍色粗體標題，
+   左側加一個 teal/cyan 色的裝飾圖示（模擬 PDF 上的三條橫線疊起圖示） */
+.site-header {
+  background-color: #ffffff;
+  color: #000000;
+  padding: 24px 16px 12px 16px;
+  text-align: left;
+  border-bottom: none;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.site-header h1 {
+  margin: 0 0 8px 0;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #1a4d9e;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 模擬 PDF 主標題左側的三條橫線疊起圖示（顏色為 teal/cyan，非主標題藍色） */
+.site-icon {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 26px;
+}
+
+.site-icon span {
+  display: block;
+  height: 5px;
+  background-color: #1a9e96;
+  border-radius: 1px;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #333333;
+}
+
+/* [問題10] 版面寬度放寬，拿掉卡片置中容器效果，靠左留白鋪陳 */
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px 24px 16px;
+}
+
+/* [問題10] 拿掉查詢區塊的白色卡片＋圓角＋陰影效果，改為單純留白排版 */
+.query-box {
+  background: transparent;
+  border-radius: 0;
+  padding: 16px 0 20px 0;
+  box-shadow: none;
+  border-bottom: 1px dashed #333333;
+  margin-bottom: 8px;
+}
+
+.query-box label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #000000;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.input-row input[type="text"] {
+  flex: 1;
+  max-width: 320px;
+  padding: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  border: 1px solid #999999;
+  border-radius: 4px;
+  color: #000000;
+  background: #ffffff;
+}
+
+/* [問題11] 查詢按鈕：不使用搶眼深藍色大 banner，改為與整體白底簡潔風格
+   一致的中等藍色實心按鈕（保留現有功能操作辨識度，僅調整色調） */
+.input-row button {
+  padding: 10px 20px;
+  font-size: 1rem;
+  font-family: inherit;
+  background-color: #1a4d9e;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.input-row button:hover {
+  background-color: #133c7c;
+}
+
+/* 「查詢深度」單選（取代舊版「同時查詢董監事所代表法人之工商登記資料」開關） */
+.depth-row {
+  margin-top: 12px;
+  border: none;
+  padding: 0;
+}
+
+.depth-row legend {
+  font-weight: bold;
+  margin-bottom: 6px;
+  padding: 0;
+  color: #000000;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: normal;
+  cursor: pointer;
+  margin-bottom: 6px;
+  color: #000000;
+}
+
+.radio-label input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.message.error {
+  margin-top: 16px;
+  background-color: #fdecea;
+  color: #a4302a;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  padding: 12px 16px;
+  font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+}
+
+/* [問題1][問題10] 結果區塊：拿掉白色卡片＋圓角＋陰影，資料直接呈現於白色頁面上 */
+.result-box {
+  margin-top: 20px;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* [問題3] 公司名稱主標題，維持藍色以呼應頁首標題風格 */
+.result-box h2 {
+  color: #1a4d9e;
+  margin: 0 0 4px 0;
+  font-size: 1.3rem;
+}
+
+/* [問題4] 區塊標題（公司基本資料／董監事資料／經理人資料等）改為黑色粗體，
+   PDF 上這些小標題並非藍色 */
+.section-title {
+  color: #000000;
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin: 18px 0 8px 0;
+}
+
+/* [問題8] 區塊間虛線分隔線，顏色加深（偏黑/深灰），比照官方頁面 PDF 樣式 */
+.section-divider {
+  border: none;
+  border-top: 1px dashed #333333;
+  margin: 20px 0;
+}
+
+/* 公司基本資料：「欄位名稱：值」垂直清單樣式，比照官方頁面 PDF 版面
+   （欄位名稱在左、值在右，逐行列出） */
+.info-list {
+  margin: 8px 0 0 0;
+}
+
+/* [問題7] 欄位列之間不使用明顯格線，靠適當留白（padding）區隔，
+   與 PDF「純文字報表」觀感一致 */
+.info-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 6px 4px;
+  border-bottom: none;
+}
+
+/* [問題2] 欄位名稱（dt）：由灰色改為黑色，且不加粗（PDF 上標籤與值同一顏色深淺、
+   同為正常字重） */
+.info-row dt {
+  flex: 0 0 180px;
+  margin: 0;
+  color: #000000;
+  font-weight: normal;
+}
+
+.info-row dd {
+  flex: 1 1 240px;
+  margin: 0;
+  color: #000000;
+  font-weight: normal;
+  word-break: break-word;
+}
+
+/* [問題7] result-table（法人基本資料鍵值表）同樣拿掉每列格線 */
+.result-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.result-table th, .result-table td {
+  text-align: left;
+  padding: 6px 6px;
+  border-bottom: none;
+  vertical-align: top;
+  color: #000000;
+  font-weight: normal;
+}
+
+.result-table th {
+  width: 30%;
+  color: #000000;
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+/* PDF 上「所營事業資料」為逐行純文字，無項目符號，故拿掉預設 bullet */
+.business-list {
+  padding-left: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.business-list .code {
+  color: #444444;
+  font-size: 0.9rem;
+  margin-right: 6px;
+}
+
+.no-data {
+  color: #444444;
+}
+
+/* [問題6][問題7] 董監事／經理人清單表格：表頭黑色粗體、無底線、無背景色；
+   資料列之間不使用明顯格線，靠留白／行距區隔 */
+.list-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.list-table th, .list-table td {
+  text-align: left;
+  padding: 7px 8px;
+  border-bottom: none;
+  vertical-align: top;
+  color: #000000;
+  font-weight: normal;
+}
+
+.list-table thead th {
+  color: #000000;
+  font-weight: 700;
+  border-bottom: none;
+  background-color: transparent;
+  white-space: nowrap;
+  padding-bottom: 9px;
+}
+
+/* 序號欄（董監事／經理人表格第一欄，4 位數字，如 0001），比照官方頁面樣式，
+   欄寬固定；顏色與其他欄位一致（黑色），僅維持欄寬設定 */
+.list-table th:first-child,
+.list-table td:first-child {
+  width: 64px;
+  color: #000000;
+  white-space: nowrap;
+}
+
+/* [問題5] 「所代表法人」等具連結語意之文字，比照官方頁面經典連結藍＋底線樣式
+   （純視覺呈現，非實際可點擊超連結，功能邏輯未變動） */
+.visual-link {
+  color: #0645ad;
+  text-decoration: underline;
+}
+
+/* 經理人資料非即時查詢之標示，與即時 API 欄位做視覺區隔 */
+.data-source-note {
+  font-size: 0.85rem;
+  color: #8a6d3b;
+  background-color: #fcf8e3;
+  border: 1px solid #faebcc;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0 4px 0;
+  font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+}
+
+/* 董監事所代表法人查詢結果——每個法人一個區塊，改用淡虛線與留白區隔，
+   拿掉卡片式圓角邊框，與整體「無卡片容器」風格一致 */
+.juristic-person-block {
+  margin: 14px 0 20px 0;
+  padding: 10px 0 4px 0;
+  border: none;
+  border-top: 1px dashed #999999;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.juristic-person-block h4 {
+  margin: 8px 0 6px 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #000000;
+}
+
+.juristic-person-block .result-table {
+  margin-top: 4px;
+}
+
+.juristic-person-block h5 {
+  margin: 14px 0 4px 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #000000;
+}
+
+.juristic-person-block h6 {
+  margin: 12px 0 4px 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #000000;
+}
+
+/* 第三層（所代表法人之所代表法人）容器，與第二層區塊做視覺內縮區隔 */
+.sub-juristic-persons {
+  margin-top: 14px;
+  padding-left: 12px;
+  border-left: 3px solid #cccccc;
+}
+
+/* 第三層每筆法人區塊，與第二層做法一致，改用淡虛線＋留白區隔 */
+.juristic-person-block--nested {
+  margin: 10px 0 14px 0;
+  padding: 8px 0 4px 0;
+  border: none;
+  border-top: 1px dashed #bbbbbb;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+/* 超過查詢上限等一般性提醒訊息（非錯誤，語意上比 data-source-note 更中性） */
+.message-note {
+  font-size: 0.85rem;
+  color: #333333;
+  background-color: #f2f2f2;
+  border: 1px solid #cccccc;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 8px 0 4px 0;
+  font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+}
+
+.badge-local {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: normal;
+  color: #8a6d3b;
+  background-color: #fcf8e3;
+  border: 1px solid #faebcc;
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
+}
+
+.site-footer {
+  text-align: left;
+  padding: 20px 16px 40px 16px;
+  color: #444444;
+  font-size: 0.85rem;
+  border-top: 1px dashed #333333;
+  margin-top: 20px;
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.disclaimer {
+  margin-top: 4px;
+  color: #555555;
+}
+
+/*
+  列印比照 CEO 提供之官方頁面 PDF（input/商工登記頁面.pdf）：
+  該 PDF 純粹是資料報表，沒有任何輸入框／按鈕／副標題說明／頁尾資料來源與
+  免責聲明。故僅在瀏覽器「列印」（含另存 PDF）情境下隱藏以下 3 個區塊，
+  平常畫面瀏覽（screen）完全不受影響：
+    1. .query-box   —— 統一編號輸入框、查詢按鈕、查詢深度單選
+    2. .subtitle    —— 頁首副標題說明文字
+    3. .site-footer —— 頁尾資料來源與免責聲明
+  .print-date、.site-header h1（主標題與裝飾圖示）、.result-box 及其內所有
+  查詢結果內容、.message.error 均維持列印可見，不受本區塊影響。
+  本次修改僅新增此 @media print 區塊，未變更上方任何既有規則。
+*/
+@media print {
+  .query-box,
+  .subtitle,
+  .site-footer,
+  .logout-form {
+    display: none;
+  }
+}
+
+/*
+  登入驗證相關頁面（login.html／verify_totp.html）新增樣式（新增功能，
+  未修改上方任何既有規則）：帳號密碼／驗證碼欄位垂直排列的簡單表單，
+  沿用既有 .query-box／.input-row 風格，僅新增欄位間距與登出按鈕樣式。
+*/
+.auth-box {
+  border-bottom: none;
+}
+
+.auth-field {
+  margin-bottom: 16px;
+}
+
+.auth-field label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #000000;
+}
+
+.auth-field input[type="text"],
+.auth-field input[type="password"] {
+  flex: 1;
+  max-width: 320px;
+  padding: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  border: 1px solid #999999;
+  border-radius: 4px;
+  color: #000000;
+  background: #ffffff;
+}
+
+/* 首頁／查詢結果頁右上角登出按鈕，維持整體簡潔藍白風格，非搶眼配色 */
+.logout-form {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 4px 16px 0 16px;
+  text-align: right;
+}
+
+.logout-btn {
+  padding: 6px 16px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background-color: #666666;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background-color: #4d4d4d;
+}

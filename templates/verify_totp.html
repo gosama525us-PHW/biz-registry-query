@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>驗證碼 - 工商登記查詢系統</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="site-icon" aria-hidden="true"><span></span><span></span><span></span></span>工商登記查詢系統</h1>
+    <p class="subtitle">請輸入 Google Authenticator 動態驗證碼（6 位數）</p>
+  </header>
+
+  <main>
+    <section class="query-box auth-box">
+      <form method="post" action="{{ url_for('verify_totp') }}" autocomplete="off">
+        <div class="auth-field">
+          <label for="totp_code">驗證碼（6 位數）</label>
+          <div class="input-row">
+            <input
+              type="text"
+              id="totp_code"
+              name="totp_code"
+              maxlength="6"
+              pattern="\d{6}"
+              inputmode="numeric"
+              title="請輸入 6 位數字驗證碼"
+              autocomplete="one-time-code"
+              required
+              autofocus
+            >
+            <button type="submit">驗證</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    {% if error %}
+      <section class="message error">
+        <p>{{ error }}</p>
+      </section>
+    {% endif %}
+  </main>
+
+  <footer class="site-footer">
+    <p>資料來源：經濟部商業發展署 商工行政資料開放平臺（data.gcis.nat.gov.tw）</p>
+    <p class="disclaimer">本系統僅供公司內部查詢使用，未經授權請勿嘗試登入。</p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>找不到頁面</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1>工商登記查詢系統</h1>
+  </header>
+  <main>
+    <section class="message error">
+      <p>找不到您要的頁面（404）。請返回<a href="{{ url_for('index') }}">首頁</a>重新查詢。</p>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <p>資料來源：經濟部商業發展署 商工行政資料開放平臺（data.gcis.nat.gov.tw）</p>
+  </footer>
+</body>
+</html>

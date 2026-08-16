@@ -50,6 +50,7 @@
 import hmac
 import os
 import re
+import ssl
 import sqlite3
 import time
 from datetime import datetime, timedelta
@@ -216,6 +217,31 @@ API_BASE_KEYWORD_SEARCH = "https://data.gcis.nat.gov.tw/od/data/api/6BBA2268-136
 
 REQUEST_TIMEOUT_SECONDS = 10
 
+
+class _RelaxedStrictSSLAdapter(requests.adapters.HTTPAdapter):
+    """
+    僅放寬 Python 3.13+ 預設啟用的 VERIFY_X509_STRICT（RFC 5280 結構嚴格檢查），
+    用於相容 data.gcis.nat.gov.tw 憑證鏈缺少 Subject Key Identifier 擴充欄位的情況
+    （2026-08-16 部署到 Render 後發現：本機開發環境 Python 版本較舊未觸發此問題，
+    Render 環境 Python 3.13+ 會因此拒絕連線，回傳 SSLCertVerificationError）。
+
+    重要（安全性說明）：此設定僅放寬「憑證格式是否嚴格符合 RFC 5280 結構規範」
+    （例如 CA 憑證是否具備 SKI/AKI 擴充欄位）的檢查，*不影響*信任鏈驗證（是否
+    為受信任 CA 簽發）、憑證有效期、網域名稱比對等核心 TLS 安全機制。
+    官方修法來源：https://docs.python.org/3/whatsnew/3.13.html
+    """
+
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = ssl.create_default_context()
+        ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+
+# 僅套用於政府開放資料平臺這個 host，不影響其他任何對外連線的憑證驗證嚴謹度。
+_gcis_session = requests.Session()
+_gcis_session.mount("https://data.gcis.nat.gov.tw", _RelaxedStrictSSLAdapter())
+
 # 單次查詢請求（第二層＋第三層合計，不分層各自計算）對外部「公司登記關鍵字查詢」
 # API 實際發動查詢次數的「全域防禦性上限」（CEO 明確要求：正常查詢不會觸及此數字，
 # 目的僅為防止異常資料如巨量交叉代表關係拖垮系統或對政府免費 API 造成不合理負擔）。
@@ -330,7 +356,7 @@ def call_gcis_api(base_url: str, tax_id: str, top: int | None = None):
         params["$top"] = top
 
     try:
-        resp = requests.get(base_url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
+        resp = _gcis_session.get(base_url, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
     except requests.exceptions.Timeout as e:
         print(f"[GCIS_API_ERROR] type=Timeout detail={e} url={base_url}", flush=True)
         return False, None, "查詢外部政府資料平臺逾時，請稍後再試。"
@@ -437,7 +463,7 @@ def call_gcis_keyword_search_api(company_name_query: str, top: int = 20):
     }
 
     try:
-        resp = requests.get(API_BASE_KEYWORD_SEARCH, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
+        resp = _gcis_session.get(API_BASE_KEYWORD_SEARCH, params=params, timeout=REQUEST_TIMEOUT_SECONDS)
     except requests.exceptions.Timeout as e:
         print(f"[GCIS_API_ERROR] type=Timeout detail={e} url={API_BASE_KEYWORD_SEARCH}", flush=True)
         return False, None, "查詢外部政府資料平臺逾時，請稍後再試。"

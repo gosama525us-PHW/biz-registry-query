@@ -34,11 +34,15 @@
      templates/static，不會外洩整個專案資料夾。
   4. 對外部 API 呼叫皆設定逾時（timeout），並捕捉例外，不將原始例外堆疊
      顯示給使用者。
-  5. 登入驗證（新增）：所有既有查詢相關路由（/、/query）皆以 @login_required
-     裝飾器保護，須先通過帳號密碼＋Google Authenticator TOTP 動態驗證碼兩關，
-     才會建立已登入 session；密碼僅以雜湊值存放（werkzeug 產生），程式中不
-     含任何明文密碼；session cookie 設定 HttpOnly／SameSite=Lax，正式環境
-     另加 Secure；並有簡易登入失敗節流機制。詳見本檔案「登入驗證設定」區塊。
+  5. 登入驗證：所有既有查詢相關路由（/、/query）皆以 @login_required 裝飾器
+     保護，須通過固定帳號密碼驗證才會建立已登入 session；密碼僅以雜湊值存放
+     （werkzeug 產生），程式中不含任何明文密碼；session cookie 設定
+     HttpOnly／SameSite=Lax，正式環境另加 Secure；並有簡易登入失敗節流機制。
+     詳見本檔案「登入驗證設定」區塊。
+     （註：本系統原設計為帳密＋Google Authenticator TOTP 兩關登入，因帳密
+     登入本身持續發生「帳號或密碼錯誤」問題，CEO 明確要求先移除 TOTP 二次
+     驗證、改回單純帳號密碼登入，待穩定後如有需要再評估加回；相關異動見
+     2026-08-16 修改紀錄。）
 
 資料來源：經濟部商業發展署 商工行政資料開放平臺（data.gcis.nat.gov.tw）
 規格參考：C:\\AI-Team\\working\\biz_registry_query\\api_research.md（唯讀，不修改）
@@ -52,7 +56,6 @@ from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
-import pyotp
 import requests
 from flask import Flask, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
@@ -61,18 +64,20 @@ app = Flask(__name__)
 
 
 # ---------------------------------------------------------------------------
-# 登入驗證設定（新增）
+# 登入驗證設定
 # ---------------------------------------------------------------------------
 #
-# CEO 核准新增之登入機制：單一固定帳號，帳號密碼 + Google Authenticator
-# TOTP 動態驗證碼兩關皆通過才能進入系統。
+# CEO 核准之登入機制：單一固定帳號，帳號密碼驗證通過即可進入系統。
+#
+# 註：本系統原設計為帳密 + Google Authenticator TOTP 動態驗證碼兩關，因帳密
+# 登入本身持續發生「帳號或密碼錯誤」問題（懷疑為環境變數複製貼上或手機鍵盤
+# 自動大寫等操作性因素），CEO 於 2026-08-16 明確要求先移除 TOTP 二次驗證、
+# 改回單純帳號密碼登入，待穩定後如有需要再評估加回。TOTP 相關程式碼
+# （/verify-totp 路由、pyotp 相依套件、AUTH_TOTP_SECRET 環境變數）已一併移除。
 #
 # 重要（安全設計）：
 #   - 密碼一律以雜湊值（werkzeug.security 產生）存放於環境變數
 #     AUTH_PASSWORD_HASH，程式中不會、也絕不可出現明文密碼。
-#   - TOTP secret（AUTH_TOTP_SECRET）因驗證機制需要伺服器端持有原始值，
-#     無法僅存雜湊，故以環境變數存放；正式環境（Render）由 Dashboard
-#     Environment Variables 注入，不寫入任何檔案或版控。
 #   - FLASK_SECRET_KEY 為 Flask session 簽章用金鑰，同樣僅透過環境變數提供。
 #   - 本機開發測試時可用專案根目錄下的 .env 檔案提供以上環境變數（見
 #     _load_dotenv_if_present()），.env 已列入 .gitignore，絕不可提交版控
@@ -106,21 +111,22 @@ def _load_dotenv_if_present() -> None:
 
 _load_dotenv_if_present()
 
-AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "")
+# AUTH_USERNAME 額外做 .strip()：避免環境變數在 Render Dashboard 複製貼上時
+# 不慎夾帶前後空白或換行，導致帳號比對一律失敗（曾為登入持續失敗之疑因之一）。
+AUTH_USERNAME = os.environ.get("AUTH_USERNAME", "").strip()
 AUTH_PASSWORD_HASH = os.environ.get("AUTH_PASSWORD_HASH", "")
-AUTH_TOTP_SECRET = os.environ.get("AUTH_TOTP_SECRET", "")
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "")
 IS_PRODUCTION = os.environ.get("FLASK_ENV", "").strip().lower() == "production"
 
-# 三項登入相關設定皆齊全才視為「已設定」，任一缺漏則一律拒絕登入（fail closed），
+# 兩項登入相關設定皆齊全才視為「已設定」，任一缺漏則一律拒絕登入（fail closed），
 # 不會讓系統在設定不完整的狀態下意外允許登入或以不安全的預設值運作。
-AUTH_CONFIGURED = bool(AUTH_USERNAME and AUTH_PASSWORD_HASH and AUTH_TOTP_SECRET)
+AUTH_CONFIGURED = bool(AUTH_USERNAME and AUTH_PASSWORD_HASH)
 
 if IS_PRODUCTION and not (AUTH_CONFIGURED and FLASK_SECRET_KEY):
     # 正式環境缺少必要登入設定或 session 金鑰時，直接拒絕啟動，避免帶著不安全的
     # 設定上線（例如缺 FLASK_SECRET_KEY 會導致 session 無法安全簽章）。
     raise RuntimeError(
-        "缺少必要環境變數（AUTH_USERNAME / AUTH_PASSWORD_HASH / AUTH_TOTP_SECRET / "
+        "缺少必要環境變數（AUTH_USERNAME / AUTH_PASSWORD_HASH / "
         "FLASK_SECRET_KEY），正式環境（FLASK_ENV=production）拒絕啟動。"
     )
 
@@ -146,8 +152,6 @@ app.config.update(
 # IP 限流或帳號鎖定機制，屬未來加強項目）。
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 60
-TOTP_MAX_ATTEMPTS = 5
-TOTP_LOCKOUT_SECONDS = 60
 
 
 def _check_lockout(fail_key: str, locked_key: str):
@@ -177,7 +181,7 @@ def _clear_lockout(fail_key: str, locked_key: str) -> None:
 
 
 def login_required(view_func):
-    """保護既有查詢相關路由：未登入（session 未通過帳密＋TOTP 兩關）一律導向 /login。"""
+    """保護既有查詢相關路由：未登入（session 未通過帳密驗證）一律導向 /login。"""
 
     @wraps(view_func)
     def wrapped_view(*args, **kwargs):
@@ -825,8 +829,11 @@ def normalize_query_depth(raw_value) -> str:
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """
-    第一關：帳號密碼登入。驗證成功僅代表通過第一關（session["pending_auth"]=True），
-    尚未視為已登入，必須接著通過 /verify-totp 第二關才會設定 session["logged_in"]。
+    帳號密碼登入。驗證成功即直接設定 session["logged_in"] = True。
+
+    （註：本系統原設計為帳密登入後尚須通過 /verify-totp 第二關，因帳密登入
+    本身持續發生「帳號或密碼錯誤」問題，CEO 於 2026-08-16 明確要求先移除
+    TOTP 二次驗證，改回單純帳號密碼登入，待穩定後如有需要再評估加回。）
 
     驗證失敗（帳號錯、密碼錯、或系統未設定登入資訊）一律顯示相同的中性錯誤訊息，
     不透露具體是帳號還是密碼有誤，避免帳號列舉攻擊。
@@ -840,7 +847,9 @@ def login():
         if locked:
             error = f"嘗試次數過多，請稍候約 {remaining_seconds} 秒後再試。"
         else:
-            username = request.form.get("username", "")
+            # .strip() 避免行動裝置輸入法或複製貼上不慎夾帶前後空白導致帳號比對
+            # 失敗；密碼欄位刻意不 strip（密碼理論上可能故意含前後空白）。
+            username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             valid = False
             if AUTH_CONFIGURED:
@@ -852,10 +861,9 @@ def login():
 
             if valid:
                 session.permanent = True
-                session["pending_auth"] = True
-                session.pop("logged_in", None)
+                session["logged_in"] = True
                 _clear_lockout("login_fail_count", "login_locked_until")
-                return redirect(url_for("verify_totp"))
+                return redirect(url_for("index"))
 
             _register_failure(
                 "login_fail_count", "login_locked_until", LOGIN_MAX_ATTEMPTS, LOGIN_LOCKOUT_SECONDS
@@ -865,51 +873,9 @@ def login():
     return render_template("login.html", error=error)
 
 
-@app.route("/verify-totp", methods=["GET", "POST"])
-def verify_totp():
-    """
-    第二關：Google Authenticator 動態驗證碼（TOTP，6 位數，30 秒更新）。
-    僅在已通過第一關（session["pending_auth"]=True）時才可存取此頁，否則導回
-    /login，避免略過帳密驗證直接嘗試 TOTP。
-
-    valid_window=1：允許前後各一個時間窗口（約 ±30 秒）的驗證碼通過，容忍伺服器
-    與使用者手機間些微的時鐘誤差，是 pyotp 官方建議的常見合理容忍範圍。
-    """
-    if session.get("logged_in"):
-        return redirect(url_for("index"))
-    if not session.get("pending_auth"):
-        return redirect(url_for("login"))
-
-    error = None
-    if request.method == "POST":
-        locked, remaining_seconds = _check_lockout("totp_fail_count", "totp_locked_until")
-        if locked:
-            error = f"嘗試次數過多，請稍候約 {remaining_seconds} 秒後再試。"
-        else:
-            code = request.form.get("totp_code", "").strip()
-            valid = False
-            if AUTH_CONFIGURED and re.fullmatch(r"\d{6}", code):
-                totp = pyotp.TOTP(AUTH_TOTP_SECRET)
-                valid = totp.verify(code, valid_window=1)
-
-            if valid:
-                session["logged_in"] = True
-                session.pop("pending_auth", None)
-                _clear_lockout("login_fail_count", "login_locked_until")
-                _clear_lockout("totp_fail_count", "totp_locked_until")
-                return redirect(url_for("index"))
-
-            _register_failure(
-                "totp_fail_count", "totp_locked_until", TOTP_MAX_ATTEMPTS, TOTP_LOCKOUT_SECONDS
-            )
-            error = "驗證碼錯誤，請重新輸入。"
-
-    return render_template("verify_totp.html", error=error)
-
-
 @app.route("/logout", methods=["POST"])
 def logout():
-    """登出：清除整個 session（含 logged_in、pending_auth 及失敗計數狀態）。"""
+    """登出：清除整個 session（含 logged_in 及失敗計數狀態）。"""
     session.clear()
     return redirect(url_for("login"))
 

@@ -447,9 +447,11 @@ main {
 }
 
 /*
-  登入驗證相關頁面（login.html／verify_totp.html）新增樣式（新增功能，
-  未修改上方任何既有規則）：帳號密碼／驗證碼欄位垂直排列的簡單表單，
-  沿用既有 .query-box／.input-row 風格，僅新增欄位間距與登出按鈕樣式。
+  登入頁面（login.html）樣式（新增功能，未修改上方任何既有規則）：
+  帳號密碼欄位垂直排列的簡單表單，沿用既有 .query-box／.input-row 風格，
+  僅新增欄位間距與登出按鈕樣式。
+  （原本另有 verify_totp.html 動態驗證碼頁面共用此區塊樣式，該頁面已於
+  2026-08-16 隨 TOTP 二次驗證機制一併移除，樣式規則本身沿用不變。）
 */
 .auth-box {
   border-bottom: none;

@@ -80,11 +80,22 @@ def _fill_and_submit(page: Page, company_name: str, person_name: str, date_from:
     _wait_for_results_or_empty(page)
 
     # 官網第一次查詢偶爾誤判成查無資料，重按一次「再檢索」確認，以那次結果為準。
+    #
+    # 重要：#btnAgainQry 位於「再檢索」分頁內，該分頁在查無資料當下不一定是
+    # 作用中分頁，DOM 上該按鈕可能被 Playwright 判定為「不可見」而讓一般的
+    # click() 持續重試到逾時（實測會卡滿 30 秒才報錯）。這裡改用
+    # force=True 跳過可見性/穩定性檢查直接觸發點擊事件（按鈕本身能回應
+    # click 事件，只是版面上暫時不可見，不影響功能），並設定較短的
+    # timeout，即使按鈕真的抓不到也能快速失敗、不拖垮整體查詢時間。
     if _is_no_data(page):
         again_btn = page.locator("#btnAgainQry")
         if again_btn.count() > 0:
-            again_btn.click()
-            _wait_for_results_or_empty(page, timeout=30000)
+            try:
+                again_btn.click(force=True, timeout=5000)
+                _wait_for_results_or_empty(page, timeout=30000)
+            except Exception:
+                # 再檢索失敗就維持原本「查無資料」的結果，不讓整個查詢因此中斷。
+                pass
 
     page.wait_for_timeout(POLITE_DELAY_MS)
 

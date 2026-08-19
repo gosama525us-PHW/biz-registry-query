@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>司法院裁判書查詢進度</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .progress-wrap{max-width:960px;margin:32px auto;padding:24px;background:#fff;border-radius:14px;box-shadow:0 4px 18px #0001}
+    .progress-track{height:16px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin:16px 0}
+    .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#0284c7,#14b8a6);transition:width .5s ease}
+    .query-card{margin-top:24px;padding:20px;border:1px solid #cbd5e1;border-radius:12px}
+    .query-card h2{margin-top:0}.status{color:#475569}.error{color:#b91c1c}
+    .actions a{display:inline-block;margin:6px 10px 0 0;padding:8px 14px;background:#075985;color:#fff;border-radius:7px;text-decoration:none}
+    .case-list{width:100%;border-collapse:collapse;margin-top:14px}.case-list th,.case-list td{padding:9px;border:1px solid #dbe3ea;text-align:left}
+  </style>
+</head>
+<body>
+  <header class="site-header"><h1>司法院裁判書查詢</h1><p class="subtitle">{{ company_name }}／{{ person_name }}</p></header>
+  <main class="progress-wrap">
+    <h2 id="progressText">準備連線司法院裁判書系統</h2>
+    <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    <p id="progressPercent" class="status">0%</p>
+    <div id="results"></div>
+  </main>
+  <script>
+    const config = {{ {
+      "company_name": company_name,
+      "person_name": person_name,
+      "date_from": date_from,
+      "date_to": date_to,
+      "step_url": url_for('fjud_search_step')
+    } | tojson }};
+    const keywords = ["賄賂", "政治獻金"];
+    const blobs = [];
+    function progress(value, text){
+      document.getElementById('progressBar').style.width=value+'%';
+      document.getElementById('progressPercent').textContent=value+'%';
+      document.getElementById('progressText').textContent=text;
+    }
+    function pdfUrl(encoded){
+      const raw=atob(encoded), bytes=new Uint8Array(raw.length);
+      for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})); blobs.push(url); return url;
+    }
+    function show(data){
+      const card=document.createElement('section'); card.className='query-card';
+      const title=document.createElement('h2'); title.textContent=`(${config.company_name}+${config.person_name})&${data.keyword}`; card.appendChild(title);
+      const meta=document.createElement('p'); meta.className='status'; meta.textContent=`查詢完成：${data.queried_at}｜結果：${data.results.length} 筆`; card.appendChild(meta);
+      const actions=document.createElement('div'); actions.className='actions';
+      data.evidence_pdfs.forEach((pdf,i)=>{ const a=document.createElement('a'); a.href=pdfUrl(pdf); a.target='_blank'; a.textContent=data.evidence_pdfs.length>1?`查看／列印官方結果第 ${i+1} 頁`:'查看／列印官方結果'; actions.appendChild(a); });
+      card.appendChild(actions);
+      if(!data.results.length){ const p=document.createElement('p'); p.textContent='司法院回傳：查無符合資料（仍可由上方按鈕開啟官方原始結果畫面）。'; card.appendChild(p); }
+      else { const table=document.createElement('table'); table.className='case-list'; table.innerHTML='<thead><tr><th>裁判字號</th><th>日期</th><th>案由</th><th>官方頁面</th></tr></thead>'; const body=document.createElement('tbody'); data.results.forEach(r=>{const tr=document.createElement('tr'); [r.case_number,r.judgment_date||'－',r.case_title||'－'].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td)});const td=document.createElement('td');const a=document.createElement('a');a.href=r.detail_url;a.target='_blank';a.rel='noopener';a.textContent='開啟裁判書';td.appendChild(a);tr.appendChild(td);body.appendChild(tr)});table.appendChild(body);card.appendChild(table); }
+      document.getElementById('results').appendChild(card);
+    }
+    async function run(){
+      for(let i=0;i<keywords.length;i++){
+        const start=i===0?10:55, waiting=i===0?35:80, done=i===0?50:100;
+        progress(start,`正在送出「${keywords[i]}」查詢，完成後將執行再檢索`);
+        const timer=setInterval(()=>{const bar=document.getElementById('progressBar');const now=parseInt(bar.style.width)||start;if(now<waiting)progress(now+1,`正在執行「${keywords[i]}」再檢索並讀取最終頁面`)},900);
+        const body=new URLSearchParams({...config,keyword:keywords[i]}); body.delete('step_url');
+        try{const response=await fetch(config.step_url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});const data=await response.json();clearInterval(timer);if(!response.ok||!data.ok)throw new Error(data.error||'查詢失敗');show(data);progress(done,`${keywords[i]}查詢完成`)}catch(e){clearInterval(timer);const p=document.createElement('p');p.className='error';p.textContent=`${keywords[i]}：${e.message}`;document.getElementById('results').appendChild(p);progress(done,`${keywords[i]}查詢結束（發生錯誤）`)}
+      }
+      progress(100,'兩組查詢全部完成，可開啟官方結果頁列印');
+    }
+    run();
+    window.addEventListener('beforeunload',()=>blobs.forEach(URL.revokeObjectURL));
+  </script>
+</body>
+</html>

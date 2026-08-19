@@ -27,6 +27,8 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
   worker 數量足夠，避免這段期間卡住其他使用者的請求。
 """
 
+import os
+from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urljoin
 
@@ -43,6 +45,18 @@ POLITE_DELAY_MS = 1200
 MAX_PAGES_PER_KEYWORD = 5
 
 DEFAULT_KEYWORDS = ["賄賂", "政治獻金"]
+
+FONT_CONFIG_PATH = Path(__file__).resolve().parent / "fonts" / "fonts.conf"
+
+
+def _configure_chromium_fonts() -> None:
+    """強制 Playwright/Chromium 使用建置階段建立的專案字型設定。"""
+    if not FONT_CONFIG_PATH.exists():
+        raise RuntimeError(
+            "找不到 fonts/fonts.conf；請確認 Render Build Command 已執行 "
+            "python install_cjk_font.py"
+        )
+    os.environ["FONTCONFIG_FILE"] = str(FONT_CONFIG_PATH)
 
 
 def _split_minguo_date(d: str):
@@ -210,6 +224,7 @@ def search_fjud_keyword(
 
     results: List[Dict] = []
     evidence_images: List[bytes] = []
+    _configure_chromium_fonts()
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(
@@ -252,6 +267,7 @@ def search_fjud(
     kws = keywords or DEFAULT_KEYWORDS
     all_results: List[Dict] = []
 
+    _configure_chromium_fonts()
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(locale="zh-TW")

@@ -38,17 +38,17 @@
       document.getElementById('progressPercent').textContent=value+'%';
       document.getElementById('progressText').textContent=text;
     }
-    function pdfUrl(encoded){
+    function imageUrl(encoded){
       const raw=atob(encoded), bytes=new Uint8Array(raw.length);
       for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
-      const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})); blobs.push(url); return url;
+      const url=URL.createObjectURL(new Blob([bytes],{type:'image/png'})); blobs.push(url); return url;
     }
     function show(data){
       const card=document.createElement('section'); card.className='query-card';
       const title=document.createElement('h2'); title.textContent=`(${config.company_name}+${config.person_name})&${data.keyword}`; card.appendChild(title);
       const meta=document.createElement('p'); meta.className='status'; meta.textContent=`查詢完成：${data.queried_at}｜結果：${data.results.length} 筆`; card.appendChild(meta);
       const actions=document.createElement('div'); actions.className='actions';
-      data.evidence_pdfs.forEach((pdf,i)=>{ const a=document.createElement('a'); a.href=pdfUrl(pdf); a.target='_blank'; a.textContent=data.evidence_pdfs.length>1?`查看／列印官方結果第 ${i+1} 頁`:'查看／列印官方結果'; actions.appendChild(a); });
+      data.evidence_images.forEach((image,i)=>{ const a=document.createElement('a'); a.href=imageUrl(image); a.target='_blank'; a.textContent=data.evidence_images.length>1?`查看／列印官方結果第 ${i+1} 頁`:'查看／列印官方結果'; actions.appendChild(a); });
       card.appendChild(actions);
       if(!data.results.length){ const p=document.createElement('p'); p.textContent='司法院回傳：查無符合資料（仍可由上方按鈕開啟官方原始結果畫面）。'; card.appendChild(p); }
       else { const table=document.createElement('table'); table.className='case-list'; table.innerHTML='<thead><tr><th>裁判字號</th><th>日期</th><th>案由</th><th>官方頁面</th></tr></thead>'; const body=document.createElement('tbody'); data.results.forEach(r=>{const tr=document.createElement('tr'); [r.case_number,r.judgment_date||'－',r.case_title||'－'].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td)});const td=document.createElement('td');const a=document.createElement('a');a.href=r.detail_url;a.target='_blank';a.rel='noopener';a.textContent='開啟裁判書';td.appendChild(a);tr.appendChild(td);body.appendChild(tr)});table.appendChild(body);card.appendChild(table); }

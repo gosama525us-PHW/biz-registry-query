@@ -14,11 +14,13 @@ PROJECT_DIR = Path(__file__).resolve().parent
 FONT_DIR = PROJECT_DIR / "fonts"
 FONT_PATH = FONT_DIR / "NotoSansCJKtc-Regular.otf"
 FONT_CONFIG_PATH = FONT_DIR / "fonts.conf"
+FONT_CACHE_DIR = FONT_DIR / "cache"
 MIN_FONT_SIZE = 10_000_000
 
 
 def main() -> None:
     FONT_DIR.mkdir(parents=True, exist_ok=True)
+    FONT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     if not FONT_PATH.exists() or FONT_PATH.stat().st_size < MIN_FONT_SIZE:
         temp_path = FONT_PATH.with_suffix(".download")
         print("Downloading Noto Sans CJK TC font...", flush=True)
@@ -39,7 +41,7 @@ def main() -> None:
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
   <dir>{FONT_DIR}</dir>
-  <cachedir>{FONT_DIR / 'cache'}</cachedir>
+  <cachedir>{FONT_CACHE_DIR}</cachedir>
   <alias>
     <family>sans-serif</family>
     <prefer><family>Noto Sans CJK TC</family></prefer>

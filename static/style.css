@@ -503,3 +503,18 @@ main {
 .logout-btn:hover {
   background-color: #4d4d4d;
 }
+
+  /* 裁判書查詢串接按鈕（fjud-search） */
+.fjud-link-btn {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  background: #1f4e8c;
+  color: white;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.fjud-link-btn:hover {
+  opacity: 0.85;
+}

@@ -1069,7 +1069,11 @@ def fjud_search():
         try:
             results = search_fjud(company_name, person_name, date_from, date_to)
         except Exception:
-            # 不外洩原始例外訊息（可能包含官網頁面結構等內部細節），僅顯示中性訊息。
+            # 不外洩原始例外訊息給使用者（可能包含官網頁面結構等內部細節），
+            # 但完整堆疊印到伺服器端 log（Render Logs 可查），方便除錯。
+            import traceback
+            print("=== /fjud-search 查詢失敗 ===", flush=True)
+            traceback.print_exc()
             error = "查詢司法院裁判書系統時發生錯誤，可能是官網回應逾時或版面異動，請稍後再試。"
 
     return render_template(

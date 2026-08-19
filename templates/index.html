@@ -133,6 +133,18 @@
           </div>
         </dl>
 
+        {% if result.company_name and result.company_name != "無資料" and result.responsible_name and result.responsible_name != "無資料" %}
+        <div class="info-row fjud-link-row">
+          <dt>裁判書查詢</dt>
+        <dd>
+          <a class="fjud-link-btn" href="https://gosama525us-phw.github.io/fjud-search/?company={{ result.company_name | urlencode }}&person={{ result.responsible_name | urlencode }}" target="_blank" rel="noopener">
+            查詢司法院裁判書（賄賂／政治獻金）
+          </a>
+        </dd>
+        </div>
+        {% endif %}
+        
+
         <hr class="section-divider">
 
         <h3 class="section-title">董監事資料(序號依據公司基本資料內容顯示)</h3>

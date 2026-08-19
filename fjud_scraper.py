@@ -153,11 +153,11 @@ def _go_next_page(page: Page):
     page.wait_for_timeout(POLITE_DELAY_MS)
 
 
-def _capture_official_result_pdf(page: Page) -> bytes:
-    """將司法院目前顯示的查詢結果頁以 Chromium 列印成 PDF（不落地保存）。"""
+def _capture_official_result_image(page: Page) -> bytes:
+    """將司法院目前顯示的查詢結果頁擷取成高解析 PNG（不落地保存）。"""
     # iframe 預設高度可能只顯示畫面的一部分；列印前依內容高度展開，讓官方
-    # 查詢條件及完整結果清單一起進入 PDF。若官網日後限制存取，失敗時仍可
-    # 使用原本高度列印，不影響查詢本身。
+    # 查詢條件及完整結果清單一起進入影像。使用 PNG 可避免 Chromium 在產生
+    # 文字型 PDF 時因 Render 缺少繁體中文字型而出現亂碼。
     try:
         page.evaluate(
             """
@@ -172,12 +172,7 @@ def _capture_official_result_pdf(page: Page) -> bytes:
         )
     except Exception:
         pass
-    page.emulate_media(media="screen")
-    return page.pdf(
-        format="A4",
-        print_background=True,
-        margin={"top": "8mm", "right": "8mm", "bottom": "8mm", "left": "8mm"},
-    )
+    return page.screenshot(full_page=True, type="png")
 
 
 def search_fjud_keyword(
@@ -188,9 +183,9 @@ def search_fjud_keyword(
     keyword: str,
 ) -> Tuple[List[Dict], List[bytes]]:
     """
-    查詢單一關鍵字並回傳 (結構化結果, 官方結果頁PDF清單)。
-    每一個司法院結果分頁各擷取一份 PDF；即使查無資料也至少會有一份。
-    PDF 只存在本次 HTTP 回應的記憶體中，不寫入磁碟或資料庫。
+    查詢單一關鍵字並回傳 (結構化結果, 官方結果頁PNG清單)。
+    每一個司法院結果分頁各擷取一份影像；即使查無資料也至少會有一份。
+    PNG 只存在本次 HTTP 回應的記憶體中，不寫入磁碟或資料庫。
     """
     company_name = (company_name or "").strip()
     person_name = (person_name or "").strip()
@@ -201,24 +196,28 @@ def search_fjud_keyword(
         raise ValueError("不允許的裁判書查詢關鍵字")
 
     results: List[Dict] = []
-    evidence_pdfs: List[bytes] = []
+    evidence_images: List[bytes] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        context = browser.new_context(locale="zh-TW")
+        context = browser.new_context(
+            locale="zh-TW",
+            viewport={"width": 1600, "height": 1200},
+            device_scale_factor=1.5,
+        )
         page = context.new_page()
         try:
             _fill_and_submit(page, company_name, person_name, date_from, date_to, keyword)
             page_idx = 1
             while True:
                 results.extend(_parse_current_page(page, keyword))
-                evidence_pdfs.append(_capture_official_result_pdf(page))
+                evidence_images.append(_capture_official_result_image(page))
                 if page_idx >= MAX_PAGES_PER_KEYWORD or not _has_next_page(page):
                     break
                 _go_next_page(page)
                 page_idx += 1
         finally:
             browser.close()
-    return results, evidence_pdfs
+    return results, evidence_images
 
 
 def search_fjud(

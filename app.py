@@ -1050,7 +1050,7 @@ def fjud_search():
 
     本路由先顯示進度頁，再由前端依序呼叫 /fjud-search-step 查詢兩組關鍵字。
     每組第一次結果出現後一律執行「再檢索」，只擷取再檢索後的最終官方頁面；
-    擷取內容以 base64 回到當下瀏覽器，不寫入伺服器磁碟或資料庫。
+    擷取的官方 PNG 畫面以 base64 回到當下瀏覽器，不寫入伺服器磁碟或資料庫。
     """
     company_name = request.form.get("company_name", "").strip()
     person_name = request.form.get("person_name", "").strip()
@@ -1079,7 +1079,7 @@ def fjud_search():
 @app.route("/fjud-search-step", methods=["POST"])
 @login_required
 def fjud_search_step():
-    """供進度頁逐一查詢兩組關鍵字；PDF 以 base64 回傳，不在伺服器保存。"""
+    """供進度頁逐一查詢兩組關鍵字；PNG 以 base64 回傳，不在伺服器保存。"""
     company_name = request.form.get("company_name", "").strip()
     person_name = request.form.get("person_name", "").strip()
     date_from = request.form.get("date_from", "").strip()
@@ -1090,14 +1090,14 @@ def fjud_search_step():
     if any(len(v) > 200 for v in (company_name, person_name, keyword)):
         return jsonify({"ok": False, "error": "查詢參數格式錯誤。"}), 400
     try:
-        results, pdfs = search_fjud_keyword(
+        results, images = search_fjud_keyword(
             company_name, person_name, date_from, date_to, keyword
         )
         return jsonify({
             "ok": True,
             "keyword": keyword,
             "results": results,
-            "evidence_pdfs": [base64.b64encode(p).decode("ascii") for p in pdfs],
+            "evidence_images": [base64.b64encode(p).decode("ascii") for p in images],
             "queried_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
     except Exception:

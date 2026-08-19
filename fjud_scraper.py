@@ -27,7 +27,6 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
   worker 數量足夠，避免這段期間卡住其他使用者的請求。
 """
 
-import os
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urljoin
@@ -46,17 +45,29 @@ MAX_PAGES_PER_KEYWORD = 5
 
 DEFAULT_KEYWORDS = ["賄賂", "政治獻金"]
 
-FONT_CONFIG_PATH = Path(__file__).resolve().parent / "fonts" / "fonts.conf"
+FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NotoSansCJKtc-Regular.otf"
+FONT_ROUTE_URL = "https://fjud-local-font.invalid/NotoSansCJKtc-Regular.otf"
 
 
-def _configure_chromium_fonts() -> None:
-    """強制 Playwright/Chromium 使用建置階段建立的專案字型設定。"""
-    if not FONT_CONFIG_PATH.exists():
+def _verify_cjk_font() -> None:
+    """確認建置階段下載的字型存在且大小合理。"""
+    if not FONT_PATH.exists() or FONT_PATH.stat().st_size < 10_000_000:
         raise RuntimeError(
-            "找不到 fonts/fonts.conf；請確認 Render Build Command 已執行 "
+            "找不到有效的 fonts/NotoSansCJKtc-Regular.otf；請確認 Build Command 已執行 "
             "python install_cjk_font.py"
         )
-    os.environ["FONTCONFIG_FILE"] = str(FONT_CONFIG_PATH)
+
+
+def _register_cjk_font_route(page: Page) -> None:
+    """以 Playwright 路由直接將本地 OTF 提供給官網頁面，不依賴 fontconfig。"""
+    page.route(
+        FONT_ROUTE_URL,
+        lambda route: route.fulfill(
+            path=str(FONT_PATH),
+            content_type="font/otf",
+            headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600"},
+        ),
+    )
 
 
 def _split_minguo_date(d: str):
@@ -172,16 +183,27 @@ def _capture_official_result_image(page: Page) -> bytes:
     # Render 預設環境沒有繁體中文字型。建置階段由 install_cjk_font.py 安裝
     # Noto Sans CJK TC；擷取前再對主頁及所有 iframe 強制指定該字型，避免官網
     # 原始 CSS 指向伺服器不存在的中文字型而顯示方框。
-    font_css = """
-      html, body, input, button, select, textarea, table, th, td, a, span, div, p {
-        font-family: 'Noto Sans CJK TC', 'Noto Sans TC', sans-serif !important;
-      }
+    font_css = f"""
+      @font-face {{
+        font-family: 'FJUD Audit CJK';
+        src: url('{FONT_ROUTE_URL}') format('opentype');
+        font-weight: 100 900;
+        font-style: normal;
+      }}
+      html, body, input, button, select, textarea, table, th, td, a, span, div, p {{
+        font-family: 'FJUD Audit CJK', sans-serif !important;
+      }}
     """
-    for frame in page.frames:
-        try:
-            frame.add_style_tag(content=font_css)
-        except Exception:
-            pass
+    target_frames = [
+        frame for frame in page.frames
+        if "judgment.judicial.gov.tw" in frame.url
+    ]
+    if not target_frames:
+        raise RuntimeError("找不到可套用中文字型的司法院頁面")
+    for frame in target_frames:
+        frame.add_style_tag(content=font_css)
+        frame.evaluate("document.fonts.load('16px FJUD Audit CJK')")
+        frame.evaluate("document.fonts.ready")
     # iframe 預設高度可能只顯示畫面的一部分；列印前依內容高度展開，讓官方
     # 查詢條件及完整結果清單一起進入影像。使用 PNG 可避免 Chromium 在產生
     # 文字型 PDF 時因 Render 缺少繁體中文字型而出現亂碼。
@@ -224,7 +246,7 @@ def search_fjud_keyword(
 
     results: List[Dict] = []
     evidence_images: List[bytes] = []
-    _configure_chromium_fonts()
+    _verify_cjk_font()
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(
@@ -233,6 +255,7 @@ def search_fjud_keyword(
             device_scale_factor=1.5,
         )
         page = context.new_page()
+        _register_cjk_font_route(page)
         try:
             _fill_and_submit(page, company_name, person_name, date_from, date_to, keyword)
             page_idx = 1
@@ -267,11 +290,12 @@ def search_fjud(
     kws = keywords or DEFAULT_KEYWORDS
     all_results: List[Dict] = []
 
-    _configure_chromium_fonts()
+    _verify_cjk_font()
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(locale="zh-TW")
         page = context.new_page()
+        _register_cjk_font_route(page)
 
         try:
             for kw in kws:

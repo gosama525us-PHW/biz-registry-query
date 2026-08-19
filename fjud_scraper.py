@@ -205,28 +205,41 @@ _ALLOWED_PDF_HOST = "judgment.judicial.gov.tw"
 
 def fetch_judgment_pdf(detail_url: str) -> bytes:
     """
-    開啟指定的裁判書明細頁，抓官網「轉存PDF」按鈕(#hlExportPDF)的真實 PDF 連結，
-    直接下載該份官方 PDF 檔案內容（bytes），不落地存檔，由呼叫端決定怎麼回應。
+    開啟指定的裁判書明細頁，直接點擊官網「轉存PDF」按鈕(#hlExportPDF)觸發
+    真實下載事件取得 PDF 內容（bytes），不落地存檔，由呼叫端決定怎麼回應。
+
+    改版說明：原本改用「自己組 API 請求」(context.request.get) 下載 PDF 連結，
+    結果官網回應逾期／異常，研判是官網對下載連結有防盜連或工作階段驗證機制
+    （單純用 API 請求不會像真實瀏覽器點擊那樣完整帶上當下的 cookie、Referer、
+    瀏覽器環境等資訊）。改成用 Playwright 模擬「真的點一下轉存PDF按鈕」，
+    直接攔截瀏覽器原生的下載事件取得檔案內容，行為上等同真人操作，
+    可避免上述驗證機制擋下請求。
     """
     if not detail_url or _ALLOWED_PDF_HOST not in detail_url:
         raise ValueError("不允許的裁判書網址")
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        context = browser.new_context(locale="zh-TW")
+        context = browser.new_context(locale="zh-TW", accept_downloads=True)
         page = context.new_page()
         try:
             page.goto(detail_url, wait_until="networkidle")
             pdf_link = page.locator("#hlExportPDF")
             pdf_link.wait_for(state="attached", timeout=10000)
-            href = pdf_link.get_attribute("href")
-            if not href:
-                raise RuntimeError("找不到轉存PDF連結")
-            pdf_url = urljoin(BASE_URL, href)
 
-            resp = context.request.get(pdf_url)
-            if not resp.ok:
-                raise RuntimeError(f"下載 PDF 失敗，HTTP {resp.status}")
-            return resp.body()
+            # #hlExportPDF 的 target="_blank"，點擊後會開新分頁；
+            # 用 context.expect_page() 接住新分頁，再於該分頁等待瀏覽器
+            # 原生的 download 事件（比自組 API 請求更貼近真實使用者行為）。
+            with context.expect_page() as new_page_info:
+                pdf_link.click()
+            download_page = new_page_info.value
+            download = download_page.wait_for_event("download", timeout=15000)
+            download_path = download.path()
+            if not download_path:
+                raise RuntimeError("下載事件未取得檔案路徑")
+            with open(download_path, "rb") as f:
+                data = f.read()
+            download_page.close()
+            return data
         finally:
             browser.close()

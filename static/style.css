@@ -441,7 +441,8 @@ main {
   .query-box,
   .subtitle,
   .site-footer,
-  .logout-form {
+  .logout-form,
+  .fjud-link-row {
     display: none;
   }
 }

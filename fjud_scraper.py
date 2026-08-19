@@ -17,11 +17,8 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
 - 查詢結果會出現在 <iframe id="iframe-data"> 裡面，不是主頁面本身。
 - 官網第一次查詢偶爾會誤判「查無資料」，需要再按一次左邊的「再檢索」
   （#btnAgainQry）確認，這裡已內建自動重試一次的邏輯。
-- 判決明細頁有官方「轉存PDF」按鈕（#hlExportPDF），href 直接是 PDF 檔案的
-  相對路徑，可以直接下載，比瀏覽器列印模擬更準確。此模組採「按需下載」
-  設計：查詢當下只取清單（標題／日期／案由／明細連結），使用者要看某一筆
-  的 PDF 時才另外呼叫 fetch_judgment_pdf()，避免查詢階段就把每一筆都下載
-  一次、拖慢查詢速度。
+- 查詢當下只取得清單（標題／日期／案由／明細連結）。使用者點擊「開啟裁判書」
+  後直接前往司法院明細頁，如需 PDF 可使用瀏覽器的列印／另存為 PDF 功能。
 
 效能與逾時提醒：
 - 這是同步（sync）Playwright API，會整個佔用呼叫它的 gunicorn worker
@@ -31,7 +28,7 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
 """
 
 from typing import List, Dict, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 from playwright.sync_api import sync_playwright, Page
 
@@ -122,6 +119,9 @@ def _parse_current_page(page: Page, keyword: str) -> List[Dict]:
         link = row.locator("a.hlTitle_scroll").first
         case_number = link.inner_text().strip()
         href = link.get_attribute("href")
+        # 司法院回傳的 href 常是 data.aspx?... 相對路徑；必須以 FJUD 查詢頁
+        # 為基準，才會形成正確的 /FJUD/data.aspx?... 明細網址。
+        detail_url = urljoin(FJUD_URL, href) if href else None
         tds = row.locator("td")
         judgment_date = None
         case_title = None
@@ -137,25 +137,10 @@ def _parse_current_page(page: Page, keyword: str) -> List[Dict]:
                 "case_number": case_number,
                 "case_title": case_title,
                 "judgment_date": judgment_date,
+                "detail_url": detail_url,
             }
         )
     return results
-
-
-def _find_detail_url(page: Page, case_number: str) -> Optional[str]:
-    """在目前結果頁找出指定裁判字號的「當次有效」明細網址。"""
-    frame = page.frame_locator(RESULTS_FRAME_SELECTOR)
-    links = frame.locator("a.hlTitle_scroll")
-    target = (case_number or "").strip()
-
-    for i in range(links.count()):
-        link = links.nth(i)
-        if link.inner_text().strip() == target:
-            href = link.get_attribute("href")
-            # href 常是 data.aspx?... 這類相對路徑，必須以 /FJUD/ 查詢頁為基準；
-            # 若只用網站網域解析，會誤組成網站根目錄下的 /data.aspx。
-            return urljoin(FJUD_URL, href) if href else None
-    return None
 
 
 def _has_next_page(page: Page) -> bool:
@@ -179,7 +164,7 @@ def search_fjud(
 ) -> List[Dict]:
     """
     主查詢函式：對每個關鍵字組合各跑一次查詢，合併回傳所有結果（不含 PDF）。
-    每筆結果: {keyword, case_number, case_title, judgment_date}
+    每筆結果: {keyword, case_number, case_title, judgment_date, detail_url}
     """
     company_name = (company_name or "").strip()
     person_name = (person_name or "").strip()
@@ -208,82 +193,3 @@ def search_fjud(
             browser.close()
 
     return all_results
-
-
-# 允許被下載 PDF 的網域白名單，避免被拿去當任意網址下載代理（SSRF 防護）。
-_ALLOWED_PDF_HOST = "judgment.judicial.gov.tw"
-
-
-def fetch_judgment_pdf(
-    company_name: str,
-    person_name: str,
-    date_from: str,
-    date_to: str,
-    keyword: str,
-    case_number: str,
-) -> bytes:
-    """
-    重新執行原查詢並找到指定裁判字號，再於同一個 BrowserContext 內開啟明細
-    及下載 PDF。司法院的結果明細網址會依附查詢工作階段，不能把先前查詢取得
-    的 detail_url 關閉瀏覽器後再利用，否則容易顯示「網頁已逾期」。
-    """
-    company_name = (company_name or "").strip()
-    person_name = (person_name or "").strip()
-    keyword = (keyword or "").strip()
-    case_number = (case_number or "").strip()
-    if not company_name or not person_name or not case_number:
-        raise ValueError("缺少重新查詢裁判書所需資料")
-    if keyword not in DEFAULT_KEYWORDS:
-        raise ValueError("不允許的裁判書查詢關鍵字")
-
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        context = browser.new_context(locale="zh-TW", accept_downloads=True)
-        page = context.new_page()
-        try:
-            # 先重跑查詢，產生屬於本次 context/session 的有效明細網址。
-            _fill_and_submit(page, company_name, person_name, date_from, date_to, keyword)
-
-            detail_url = None
-            for page_idx in range(1, MAX_PAGES_PER_KEYWORD + 1):
-                detail_url = _find_detail_url(page, case_number)
-                if detail_url:
-                    break
-                if not _has_next_page(page):
-                    break
-                _go_next_page(page)
-
-            if not detail_url:
-                raise LookupError(f"重新查詢後找不到裁判書：{case_number}")
-
-            parsed = urlparse(detail_url)
-            if parsed.scheme != "https" or parsed.hostname != _ALLOWED_PDF_HOST:
-                raise ValueError("不允許的裁判書網址")
-
-            page.goto(detail_url, wait_until="domcontentloaded", timeout=30000)
-            pdf_link = page.locator("#hlExportPDF")
-            pdf_link.wait_for(state="attached", timeout=15000)
-
-            # 直接使用同一 BrowserContext 的 request client，會沿用本次查詢的
-            # cookie。比假設按鈕一定開新分頁、再等待 download 事件更穩定。
-            pdf_href = pdf_link.get_attribute("href")
-            if not pdf_href:
-                raise RuntimeError("司法院PDF按鈕沒有下載網址")
-            pdf_url = urljoin(page.url, pdf_href)
-            pdf_parsed = urlparse(pdf_url)
-            if pdf_parsed.scheme != "https" or pdf_parsed.hostname != _ALLOWED_PDF_HOST:
-                raise ValueError("不允許的PDF網址")
-
-            response = context.request.get(
-                pdf_url,
-                headers={"Referer": page.url},
-                timeout=30000,
-            )
-            if not response.ok:
-                raise RuntimeError(f"司法院PDF回應錯誤：HTTP {response.status}")
-            data = response.body()
-            if not data.startswith(b"%PDF"):
-                raise RuntimeError("司法院回傳的內容不是有效PDF，可能為逾期頁面")
-            return data
-        finally:
-            browser.close()

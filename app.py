@@ -58,10 +58,10 @@ from functools import wraps
 from pathlib import Path
 
 import requests
-from flask import Flask, Response, redirect, render_template, request, session, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
-from fjud_scraper import fetch_judgment_pdf, search_fjud
+from fjud_scraper import search_fjud
 
 app = Flask(__name__)
 
@@ -1084,48 +1084,6 @@ def fjud_search():
         date_to=date_to,
         results=results,
         error=error,
-    )
-
-
-@app.route("/fjud-pdf", methods=["POST"])
-@login_required
-def fjud_pdf():
-    """
-    按需下載單筆裁判書的官方 PDF（不在 /fjud-search 查詢階段就整批下載，
-    避免拖慢查詢速度；只有使用者實際點擊某一筆的「下載PDF」才觸發）。
-
-    不再接收及重用可能逾期的明細 URL；改以原查詢條件及裁判字號重新查詢，
-    並在同一個司法院工作階段內取得 PDF。
-    """
-    company_name = request.form.get("company_name", "").strip()
-    person_name = request.form.get("person_name", "").strip()
-    date_from = request.form.get("date_from", "").strip()
-    date_to = request.form.get("date_to", "").strip()
-    keyword = request.form.get("keyword", "").strip()
-    case_number = request.form.get("case_number", "").strip()
-
-    # 防止被手動送入異常巨量內容；日期的完整格式會由爬蟲模組再次驗證。
-    if any(len(v) > 200 for v in (company_name, person_name, keyword, case_number)):
-        return Response("下載參數格式錯誤。", status=400, mimetype="text/plain")
-    try:
-        pdf_bytes = fetch_judgment_pdf(
-            company_name=company_name,
-            person_name=person_name,
-            date_from=date_from,
-            date_to=date_to,
-            keyword=keyword,
-            case_number=case_number,
-        )
-    except Exception:
-        import traceback
-        print("=== /fjud-pdf 下載失敗 ===", flush=True)
-        traceback.print_exc()
-        return Response("下載 PDF 失敗，請稍後再試；如需立即查閱，可使用結果頁的「司法院查詢」連結。", status=400, mimetype="text/plain")
-
-    return Response(
-        pdf_bytes,
-        mimetype="application/pdf",
-        headers={"Content-Disposition": "inline; filename=judgment.pdf"},
     )
 
 

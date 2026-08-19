@@ -78,13 +78,15 @@ def _fill_and_submit(page: Page, company_name: str, person_name: str, date_from:
     # 只採用再檢索完成後的畫面與資料作為最終結果。這是本系統稽核流程的固定
     # 規則，第一次顯示內容不擷取、不回傳。
     #
-    # #btnAgainQry 在部分狀態下可能被版面隱藏，因此使用 force=True 直接觸發。
+    # #btnAgainQry 在部分狀態下會被 CSS 隱藏。Playwright 的 force=True 對
+    # display:none 元素仍可能拋出 Element is not visible，因此改由頁面內的
+    # HTMLElement.click() 直接觸發原生 click 事件。
     # 若無法完成再檢索，不能悄悄沿用第一次結果，必須明確讓整次查詢失敗，避免
     # 將未經再檢索確認的畫面當成稽核資料。
     again_btn = page.locator("#btnAgainQry")
     if again_btn.count() == 0:
         raise RuntimeError("司法院頁面找不到「再檢索」按鈕")
-    again_btn.click(force=True, timeout=10000)
+    again_btn.evaluate("element => element.click()")
     page.wait_for_timeout(800)
     _wait_for_results_or_empty(page, timeout=30000)
 
@@ -140,7 +142,8 @@ def _parse_current_page(page: Page, keyword: str) -> List[Dict]:
 
 def _has_next_page(page: Page) -> bool:
     frame = page.frame_locator(RESULTS_FRAME_SELECTOR)
-    return frame.locator("#hlNext").first.count() > 0
+    next_link = frame.locator("#hlNext").first
+    return next_link.count() > 0 and next_link.is_visible()
 
 
 def _go_next_page(page: Page):

@@ -38,9 +38,16 @@ def main() -> None:
         f"""<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
-  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
   <dir>{FONT_DIR}</dir>
   <cachedir>{FONT_DIR / 'cache'}</cachedir>
+  <alias>
+    <family>sans-serif</family>
+    <prefer><family>Noto Sans CJK TC</family></prefer>
+  </alias>
+  <alias>
+    <family>serif</family>
+    <prefer><family>Noto Sans CJK TC</family></prefer>
+  </alias>
 </fontconfig>
 """,
         encoding="utf-8",

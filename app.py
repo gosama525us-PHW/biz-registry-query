@@ -48,6 +48,7 @@
 規格參考：C:\\AI-Team\\working\\biz_registry_query\\api_research.md（唯讀，不修改）
 """
 import hmac
+import base64
 import os
 import re
 import ssl
@@ -58,10 +59,10 @@ from functools import wraps
 from pathlib import Path
 
 import requests
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
-from fjud_scraper import search_fjud
+from fjud_scraper import DEFAULT_KEYWORDS, search_fjud_keyword
 
 app = Flask(__name__)
 
@@ -1047,44 +1048,63 @@ def fjud_search():
     自動查詢 (公司名稱+負責人)&賄賂 與 (公司名稱+負責人)&政治獻金 兩組全文檢索
     （全法院、案件類別刑事）。
 
-    這支路由會直接同步呼叫 search_fjud()（Playwright，實測含兩組關鍵字約
-    20~40 秒），期間會整個佔用當下這個 gunicorn worker，故部署時務必確認
-    Procfile 已調高 --timeout，且 worker 數量足夠（見 Procfile 註解），
-    否則長時間查詢可能被中斷或塞住其他使用者的請求。
-
-    查詢過程或官網本身發生的任何例外，一律轉換為中性錯誤訊息顯示給使用者，
-    不將原始例外堆疊訊息外洩。
+    本路由先顯示進度頁，再由前端依序呼叫 /fjud-search-step 查詢兩組關鍵字。
+    每組第一次結果出現後一律執行「再檢索」，只擷取再檢索後的最終官方頁面；
+    擷取內容以 base64 回到當下瀏覽器，不寫入伺服器磁碟或資料庫。
     """
     company_name = request.form.get("company_name", "").strip()
     person_name = request.form.get("person_name", "").strip()
     date_from = request.form.get("date_from", "").strip()
     date_to = request.form.get("date_to", "").strip()
 
-    error = None
-    results = []
-
     if not company_name or not person_name or not date_from or not date_to:
-        error = "缺少查詢所需的公司名稱、負責人姓名或日期區間，請從公司查詢結果頁面重新點擊「查詢司法院裁判書」按鈕。"
-    else:
-        try:
-            results = search_fjud(company_name, person_name, date_from, date_to)
-        except Exception:
-            # 不外洩原始例外訊息給使用者（可能包含官網頁面結構等內部細節），
-            # 但完整堆疊印到伺服器端 log（Render Logs 可查），方便除錯。
-            import traceback
-            print("=== /fjud-search 查詢失敗 ===", flush=True)
-            traceback.print_exc()
-            error = "查詢司法院裁判書系統時發生錯誤，可能是官網回應逾時或版面異動，請稍後再試。"
-
+        return render_template(
+            "fjud_results.html",
+            company_name=company_name,
+            person_name=person_name,
+            date_from=date_from,
+            date_to=date_to,
+            results=[],
+            error="缺少查詢所需資料，請返回公司查詢結果頁重新操作。",
+        )
     return render_template(
-        "fjud_results.html",
+        "fjud_progress.html",
         company_name=company_name,
         person_name=person_name,
         date_from=date_from,
         date_to=date_to,
-        results=results,
-        error=error,
     )
+
+
+@app.route("/fjud-search-step", methods=["POST"])
+@login_required
+def fjud_search_step():
+    """供進度頁逐一查詢兩組關鍵字；PDF 以 base64 回傳，不在伺服器保存。"""
+    company_name = request.form.get("company_name", "").strip()
+    person_name = request.form.get("person_name", "").strip()
+    date_from = request.form.get("date_from", "").strip()
+    date_to = request.form.get("date_to", "").strip()
+    keyword = request.form.get("keyword", "").strip()
+    if keyword not in DEFAULT_KEYWORDS:
+        return jsonify({"ok": False, "error": "查詢關鍵字不正確。"}), 400
+    if any(len(v) > 200 for v in (company_name, person_name, keyword)):
+        return jsonify({"ok": False, "error": "查詢參數格式錯誤。"}), 400
+    try:
+        results, pdfs = search_fjud_keyword(
+            company_name, person_name, date_from, date_to, keyword
+        )
+        return jsonify({
+            "ok": True,
+            "keyword": keyword,
+            "results": results,
+            "evidence_pdfs": [base64.b64encode(p).decode("ascii") for p in pdfs],
+            "queried_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    except Exception:
+        import traceback
+        print(f"=== /fjud-search-step {keyword} 查詢失敗 ===", flush=True)
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "司法院查詢失敗，請稍後再試。"}), 502
 
 
 @app.errorhandler(404)

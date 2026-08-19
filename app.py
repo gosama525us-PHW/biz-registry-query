@@ -53,13 +53,15 @@ import re
 import ssl
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
 import requests
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, Response, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
+
+from fjud_scraper import fetch_judgment_pdf, search_fjud
 
 app = Flask(__name__)
 
@@ -303,6 +305,29 @@ def format_print_date() -> str:
     today = datetime.now()
     roc_year = today.year - 1911
     return f"{roc_year}-{today.month:02d}-{today.day:02d}"
+
+
+def _one_year_ago(today: date) -> date:
+    """回傳 today 往前一年的日期；若 today 是 2/29，退一天到 2/28（避免例外）。"""
+    try:
+        return today.replace(year=today.year - 1)
+    except ValueError:
+        return today.replace(year=today.year - 1, day=28)
+
+
+def _to_roc_7digit(d: date) -> str:
+    """西元日期 -> 民國年 7 碼字串 YYYMMDD（供司法院裁判書查詢欄位使用）。"""
+    return f"{d.year - 1911:03d}{d.month:02d}{d.day:02d}"
+
+
+def format_fjud_date_from() -> str:
+    """裁判書查詢預設起始日期：查詢當下往前一年（民國年 7 碼）。"""
+    return _to_roc_7digit(_one_year_ago(date.today()))
+
+
+def format_fjud_date_to() -> str:
+    """裁判書查詢預設迄止日期：查詢當下（民國年 7 碼）。"""
+    return _to_roc_7digit(date.today())
 
 
 def format_amount(value) -> str:
@@ -835,6 +860,11 @@ def query_company(tax_id: str):
         # 覆寫，確保「query_depth=="1" 時的行為與既有四大區塊查詢完全等價，不會多
         # 觸發任何額外 API 呼叫」。
         "juristic_persons": None,
+        # 裁判書查詢（FJUD）預設查詢區間：近一年（民國年 7 碼 YYYMMDD）。
+        # 僅供頁面上「查詢司法院裁判書」表單的隱藏欄位使用，不影響本函式
+        # 既有的工商登記查詢邏輯。
+        "fjud_date_from": format_fjud_date_from(),
+        "fjud_date_to": format_fjud_date_to(),
     }
     return True, result, None
 
@@ -1005,6 +1035,75 @@ def query():
         query_value=display_value,
         query_depth_value=query_depth,
         print_date=format_print_date(),
+    )
+
+
+@app.route("/fjud-search", methods=["POST"])
+@login_required
+def fjud_search():
+    """
+    查詢司法院裁判書系統（FJUD）：串接自「公司基本資料」頁面的表單，帶入
+    公司名稱、負責人姓名、裁判起訖日期（近一年，見 format_fjud_date_from/to），
+    自動查詢 (公司名稱+負責人)&賄賂 與 (公司名稱+負責人)&政治獻金 兩組全文檢索
+    （全法院、案件類別刑事）。
+
+    這支路由會直接同步呼叫 search_fjud()（Playwright，實測含兩組關鍵字約
+    20~40 秒），期間會整個佔用當下這個 gunicorn worker，故部署時務必確認
+    Procfile 已調高 --timeout，且 worker 數量足夠（見 Procfile 註解），
+    否則長時間查詢可能被中斷或塞住其他使用者的請求。
+
+    查詢過程或官網本身發生的任何例外，一律轉換為中性錯誤訊息顯示給使用者，
+    不將原始例外堆疊訊息外洩。
+    """
+    company_name = request.form.get("company_name", "").strip()
+    person_name = request.form.get("person_name", "").strip()
+    date_from = request.form.get("date_from", "").strip()
+    date_to = request.form.get("date_to", "").strip()
+
+    error = None
+    results = []
+
+    if not company_name or not person_name or not date_from or not date_to:
+        error = "缺少查詢所需的公司名稱、負責人姓名或日期區間，請從公司查詢結果頁面重新點擊「查詢司法院裁判書」按鈕。"
+    else:
+        try:
+            results = search_fjud(company_name, person_name, date_from, date_to)
+        except Exception:
+            # 不外洩原始例外訊息（可能包含官網頁面結構等內部細節），僅顯示中性訊息。
+            error = "查詢司法院裁判書系統時發生錯誤，可能是官網回應逾時或版面異動，請稍後再試。"
+
+    return render_template(
+        "fjud_results.html",
+        company_name=company_name,
+        person_name=person_name,
+        date_from=date_from,
+        date_to=date_to,
+        results=results,
+        error=error,
+    )
+
+
+@app.route("/fjud-pdf", methods=["GET"])
+@login_required
+def fjud_pdf():
+    """
+    按需下載單筆裁判書的官方 PDF（不在 /fjud-search 查詢階段就整批下載，
+    避免拖慢查詢速度；只有使用者實際點擊某一筆的「下載PDF」才觸發）。
+
+    url 參數限定必須是 judgment.judicial.gov.tw 網域下的網址
+    （見 fjud_scraper.fetch_judgment_pdf 內的網域白名單檢查），
+    避免被當作任意網址下載代理使用（SSRF 防護）。
+    """
+    detail_url = request.args.get("url", "")
+    try:
+        pdf_bytes = fetch_judgment_pdf(detail_url)
+    except Exception:
+        return Response("下載 PDF 失敗，請稍後再試或改用「官網原頁」連結查看。", status=400, mimetype="text/plain")
+
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": "inline; filename=judgment.pdf"},
     )
 
 

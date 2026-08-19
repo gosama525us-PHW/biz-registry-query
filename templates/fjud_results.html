@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>司法院裁判書查詢結果</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="site-icon" aria-hidden="true"><span></span><span></span><span></span></span>司法院裁判書查詢結果</h1>
+    <p class="subtitle">
+      {{ company_name }}／{{ person_name }}
+      {% if date_from and date_to %}（裁判期間 {{ date_from }} ～ {{ date_to }}，全法院刑事案件）{% endif %}
+    </p>
+  </header>
+
+  <main>
+    {% if error %}
+      <section class="message error">
+        <p>{{ error }}</p>
+      </section>
+    {% endif %}
+
+    <section class="result-box">
+      <h3 class="section-title">全文檢索結果（賄賂／政治獻金）</h3>
+      <p class="data-source-note">
+        查詢字串：(公司名稱+負責人姓名)&amp;賄賂 與 (公司名稱+負責人姓名)&amp;政治獻金，兩組分別查詢後合併顯示。
+        本頁資料為即時查詢司法院裁判書系統之結果，非本系統儲存或加值之資料，如需正式引用請以官網原頁為準。
+      </p>
+
+      {% if results %}
+        <table class="list-table">
+          <thead>
+            <tr>
+              <th>序號</th>
+              <th>關鍵字</th>
+              <th>裁判字號</th>
+              <th>裁判日期</th>
+              <th>裁判案由</th>
+              <th>連結</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in results %}
+              <tr>
+                <td>{{ "%04d" | format(loop.index) }}</td>
+                <td>{{ r.keyword }}</td>
+                <td>{{ r.case_number }}</td>
+                <td>{{ r.judgment_date or "－" }}</td>
+                <td>{{ r.case_title or "－" }}</td>
+                <td>
+                  {% if r.detail_url %}
+                    <a href="{{ r.detail_url }}" target="_blank" rel="noopener">官網原頁</a>
+                    ・
+                    <a href="{{ url_for('fjud_pdf') }}?url={{ r.detail_url | urlencode }}" target="_blank" rel="noopener">下載PDF</a>
+                  {% else %}
+                    －
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        {% if not error %}
+          <p class="no-data">沒有查到符合的裁判書。</p>
+        {% endif %}
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>資料來源：司法院裁判書查詢系統（judgment.judicial.gov.tw）</p>
+    <p class="disclaimer">本頁僅供公司內部查核參考，裁判書內容以司法院官網公示版本為準。</p>
+  </footer>
+</body>
+</html>

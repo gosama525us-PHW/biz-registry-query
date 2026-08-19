@@ -504,17 +504,24 @@ main {
   background-color: #4d4d4d;
 }
 
-  /* 裁判書查詢串接按鈕（fjud-search） */
+  /* 裁判書查詢串接按鈕（改為系統內部表單送出，非外部連結） */
 .fjud-link-btn {
   display: inline-block;
-  padding: 0.3rem 0.8rem;
+  padding: 0.5rem 1rem;
   background: #1f4e8c;
   color: white;
   text-decoration: none;
+  border: none;
   border-radius: 6px;
   font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .fjud-link-btn:hover {
   opacity: 0.85;
+}
+
+.fjud-search-form {
+  margin: 0;
 }

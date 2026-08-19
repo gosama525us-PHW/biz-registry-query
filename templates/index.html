@@ -137,9 +137,14 @@
         <div class="info-row fjud-link-row">
           <dt>裁判書查詢</dt>
         <dd>
-          <a class="fjud-link-btn" href="https://gosama525us-phw.github.io/fjud-search/?company={{ result.company_name | urlencode }}&person={{ result.responsible_name | urlencode }}" target="_blank" rel="noopener">
-            查詢司法院裁判書（賄賂／政治獻金）
-          </a>
+          <form method="post" action="{{ url_for('fjud_search') }}" target="_blank" class="fjud-search-form">
+            <input type="hidden" name="company_name" value="{{ result.company_name }}">
+            <input type="hidden" name="person_name" value="{{ result.responsible_name }}">
+            <input type="hidden" name="date_from" value="{{ result.fjud_date_from }}">
+            <input type="hidden" name="date_to" value="{{ result.fjud_date_to }}">
+            <button type="submit" class="fjud-link-btn">查詢司法院裁判書（賄賂／政治獻金，近一年）</button>
+          </form>
+          <p class="data-source-note">查詢範圍：全法院刑事案件，裁判日期 {{ result.fjud_date_from }} ～ {{ result.fjud_date_to }}（近一年）。查詢通常需時 20～40 秒，請耐心等候結果分頁開啟。</p>
         </dd>
         </div>
         {% endif %}

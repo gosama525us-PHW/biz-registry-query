@@ -26,7 +26,7 @@
       <h3 class="section-title">全文檢索結果（賄賂／政治獻金）</h3>
       <p class="data-source-note">
         查詢字串：(公司名稱+負責人姓名)&amp;賄賂 與 (公司名稱+負責人姓名)&amp;政治獻金，兩組分別查詢後合併顯示。
-        本頁資料為即時查詢司法院裁判書系統之結果，非本系統儲存或加值之資料，如需正式引用請以官網原頁為準。
+        本頁資料為即時查詢司法院裁判書系統之結果，非本系統儲存或加值之資料，如需正式引用請以司法院資料為準。
       </p>
 
       {% if results %}
@@ -50,10 +50,18 @@
                 <td>{{ r.judgment_date or "－" }}</td>
                 <td>{{ r.case_title or "－" }}</td>
                 <td>
-                  {% if r.detail_url %}
-                    <a href="{{ r.detail_url }}" target="_blank" rel="noopener">官網原頁</a>
+                  {% if r.case_number %}
+                    <form action="{{ url_for('fjud_pdf') }}" method="post" target="_blank" style="display:inline">
+                      <input type="hidden" name="company_name" value="{{ company_name }}">
+                      <input type="hidden" name="person_name" value="{{ person_name }}">
+                      <input type="hidden" name="date_from" value="{{ date_from }}">
+                      <input type="hidden" name="date_to" value="{{ date_to }}">
+                      <input type="hidden" name="keyword" value="{{ r.keyword }}">
+                      <input type="hidden" name="case_number" value="{{ r.case_number }}">
+                      <button type="submit" class="link-button" style="background:none;border:0;padding:0;color:#075985;text-decoration:underline;cursor:pointer;font:inherit">下載PDF</button>
+                    </form>
                     ・
-                    <a href="{{ url_for('fjud_pdf') }}?url={{ r.detail_url | urlencode }}" target="_blank" rel="noopener">下載PDF</a>
+                    <a href="https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx" target="_blank" rel="noopener">司法院查詢</a>
                   {% else %}
                     －
                   {% endif %}

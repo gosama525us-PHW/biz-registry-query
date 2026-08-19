@@ -50,18 +50,8 @@
                 <td>{{ r.judgment_date or "－" }}</td>
                 <td>{{ r.case_title or "－" }}</td>
                 <td>
-                  {% if r.case_number %}
-                    <form action="{{ url_for('fjud_pdf') }}" method="post" target="_blank" style="display:inline">
-                      <input type="hidden" name="company_name" value="{{ company_name }}">
-                      <input type="hidden" name="person_name" value="{{ person_name }}">
-                      <input type="hidden" name="date_from" value="{{ date_from }}">
-                      <input type="hidden" name="date_to" value="{{ date_to }}">
-                      <input type="hidden" name="keyword" value="{{ r.keyword }}">
-                      <input type="hidden" name="case_number" value="{{ r.case_number }}">
-                      <button type="submit" class="link-button" style="background:none;border:0;padding:0;color:#075985;text-decoration:underline;cursor:pointer;font:inherit">下載PDF</button>
-                    </form>
-                    ・
-                    <a href="https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx" target="_blank" rel="noopener">司法院查詢</a>
+                  {% if r.detail_url %}
+                    <a href="{{ r.detail_url }}" target="_blank" rel="noopener">開啟裁判書</a>
                   {% else %}
                     －
                   {% endif %}

@@ -155,6 +155,19 @@ def _go_next_page(page: Page):
 
 def _capture_official_result_image(page: Page) -> bytes:
     """將司法院目前顯示的查詢結果頁擷取成高解析 PNG（不落地保存）。"""
+    # Render 預設環境沒有繁體中文字型。建置階段由 install_cjk_font.py 安裝
+    # Noto Sans CJK TC；擷取前再對主頁及所有 iframe 強制指定該字型，避免官網
+    # 原始 CSS 指向伺服器不存在的中文字型而顯示方框。
+    font_css = """
+      html, body, input, button, select, textarea, table, th, td, a, span, div, p {
+        font-family: 'Noto Sans CJK TC', 'Noto Sans TC', sans-serif !important;
+      }
+    """
+    for frame in page.frames:
+        try:
+            frame.add_style_tag(content=font_css)
+        except Exception:
+            pass
     # iframe 預設高度可能只顯示畫面的一部分；列印前依內容高度展開，讓官方
     # 查詢條件及完整結果清單一起進入影像。使用 PNG 可避免 Chromium 在產生
     # 文字型 PDF 時因 Render 缺少繁體中文字型而出現亂碼。

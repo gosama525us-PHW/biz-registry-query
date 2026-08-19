@@ -6,5 +6,5 @@ python -m pip install \
   --timeout 120 \
   -r requirements.txt
 
-playwright install --with-deps chromium
+python -m playwright install chromium
 python install_cjk_font.py

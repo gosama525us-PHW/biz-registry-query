@@ -91,6 +91,18 @@
       <section class="result-box">
         <h2>{{ result.company_name }}</h2>
 
+        {% if result.related_party_export %}
+          <div class="fjud-link-row">
+            <button type="button" id="downloadRelatedParties" class="fjud-link-btn">
+              重新下載關係人TXT（{{ result.related_party_export.row_count }} 筆）
+            </button>
+            <p class="data-source-note">
+              工商登記查詢完成時已自動下載 {{ result.related_party_export.filename }}；
+              若瀏覽器阻擋自動下載，可按此按鈕重新取得。
+            </p>
+          </div>
+        {% endif %}
+
         <!--
           公司基本資料：比照 CEO 提供之官方頁面 PDF（input/商工登記頁面.pdf）版面，
           改為「欄位名稱：值」垂直清單樣式（非粗框線表格）。欄位順序與中文標籤沿用
@@ -349,5 +361,39 @@
     <p>資料來源：經濟部商業發展署 商工行政資料開放平臺（data.gcis.nat.gov.tw）</p>
     <p class="disclaimer">本系統僅供公司內部查詢使用，資料以政府開放資料平臺公示內容為準，如有疑義請以官方公示資訊為準。</p>
   </footer>
+
+  {% if result and result.related_party_export %}
+    <script>
+      (() => {
+        const relatedPartyExport = {{ result.related_party_export | tojson }};
+
+        function downloadRelatedParties() {
+          const blob = new Blob(
+            [relatedPartyExport.content],
+            { type: 'text/plain;charset=utf-8' }
+          );
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = relatedPartyExport.filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        }
+
+        const downloadButton = document.getElementById('downloadRelatedParties');
+        if (downloadButton) {
+          downloadButton.addEventListener('click', downloadRelatedParties);
+        }
+
+        // 每次成功送出工商查詢並載入結果頁時，自動下載一次。
+        window.addEventListener('load', () => {
+          setTimeout(downloadRelatedParties, 250);
+        }, { once: true });
+      })();
+    </script>
+  {% endif %}
 </body>
 </html>

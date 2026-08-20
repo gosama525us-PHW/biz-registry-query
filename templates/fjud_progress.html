@@ -57,10 +57,25 @@
     async function run(){
       for(let i=0;i<keywords.length;i++){
         const start=i===0?10:55, waiting=i===0?35:80, done=i===0?50:100;
-        progress(start,`正在送出「${keywords[i]}」查詢，完成後將執行再檢索`);
-        const timer=setInterval(()=>{const bar=document.getElementById('progressBar');const now=parseInt(bar.style.width)||start;if(now<waiting)progress(now+1,`正在執行「${keywords[i]}」再檢索並讀取最終頁面`)},900);
+        progress(start,`正在送出「${keywords[i]}」查詢，完成後將切換再檢索分頁`);
+        const timer=setInterval(()=>{const bar=document.getElementById('progressBar');const now=parseInt(bar.style.width)||start;if(now<waiting)progress(now+1,`正在查詢「${keywords[i]}」並準備官方稽核畫面`)},900);
         const body=new URLSearchParams({...config,keyword:keywords[i]}); body.delete('step_url');
-        try{const response=await fetch(config.step_url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});const data=await response.json();clearInterval(timer);if(!response.ok||!data.ok)throw new Error(data.error||'查詢失敗');show(data);progress(done,`${keywords[i]}查詢完成`)}catch(e){clearInterval(timer);const p=document.createElement('p');p.className='error';p.textContent=`${keywords[i]}：${e.message}`;document.getElementById('results').appendChild(p);progress(done,`${keywords[i]}查詢結束（發生錯誤）`)}
+        try{
+          const response=await fetch(config.step_url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+          const raw=await response.text();
+          if(!raw.trim()){
+            throw new Error(`伺服器未回傳內容（HTTP ${response.status}）。請查看 Render Log 是否出現 WORKER TIMEOUT、SIGKILL 或記憶體不足。`);
+          }
+          let data;
+          try{data=JSON.parse(raw)}catch(parseError){
+            throw new Error(`伺服器回應不是 JSON（HTTP ${response.status}）。請查看 Render Log。`);
+          }
+          if(!response.ok||!data.ok)throw new Error(data.error||`查詢失敗（HTTP ${response.status}）`);
+          show(data);
+          progress(done,`${keywords[i]}查詢完成`)
+        }catch(e){
+          const p=document.createElement('p');p.className='error';p.textContent=`${keywords[i]}：${e.message}`;document.getElementById('results').appendChild(p);progress(done,`${keywords[i]}查詢結束（發生錯誤）`)
+        }finally{clearInterval(timer)}
       }
       progress(100,'兩組查詢全部完成，可開啟官方結果頁列印');
     }

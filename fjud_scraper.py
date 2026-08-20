@@ -28,6 +28,7 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
   worker 數量足夠，避免這段期間卡住其他使用者的請求。
 """
 
+import os
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urljoin
@@ -47,7 +48,9 @@ MAX_PAGES_PER_KEYWORD = 5
 DEFAULT_KEYWORDS = ["賄賂", "政治獻金"]
 
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NotoSansCJKtc-Regular.otf"
-FONT_ROUTE_URL = "https://fjud-local-font.invalid/NotoSansCJKtc-Regular.otf"
+FONTCONFIG_RUNTIME_DIR = Path("/tmp/fjud-fontconfig")
+FONTCONFIG_CACHE_DIR = FONTCONFIG_RUNTIME_DIR / "cache"
+FONTCONFIG_FILE = FONTCONFIG_RUNTIME_DIR / "fonts.conf"
 
 
 def _verify_cjk_font() -> None:
@@ -59,16 +62,30 @@ def _verify_cjk_font() -> None:
         )
 
 
-def _register_cjk_font_route(page: Page) -> None:
-    """以 Playwright 路由直接將本地 OTF 提供給官網頁面，不依賴 fontconfig。"""
-    page.route(
-        FONT_ROUTE_URL,
-        lambda route: route.fulfill(
-            path=str(FONT_PATH),
-            content_type="font/otf",
-            headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=3600"},
-        ),
+def _chromium_font_env() -> Dict[str, str]:
+    """建立 Chromium 專用、完全可寫入 /tmp 的 Fontconfig 設定。
+
+    Render 建置環境不能寫入系統 fontconfig cache；舊作法把整份 OTF 透過
+    FontFace 複製進主頁與 iframe，又會造成記憶體尖峰。這裡不執行 fc-cache，
+    只讓 Chromium 在執行期直接掃描專案字型，快取統一寫到 /tmp。
+    """
+    _verify_cjk_font()
+    FONTCONFIG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    font_dir = str(FONT_PATH.parent).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    cache_dir = str(FONTCONFIG_CACHE_DIR).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    FONTCONFIG_FILE.write_text(
+        "<?xml version='1.0'?>\n"
+        "<!DOCTYPE fontconfig SYSTEM 'urn:fontconfig:fonts.dtd'>\n"
+        "<fontconfig>\n"
+        f"  <dir>{font_dir}</dir>\n"
+        f"  <cachedir>{cache_dir}</cachedir>\n"
+        "</fontconfig>\n",
+        encoding="utf-8",
     )
+    browser_env = os.environ.copy()
+    browser_env["FONTCONFIG_FILE"] = str(FONTCONFIG_FILE)
+    browser_env["XDG_CACHE_HOME"] = str(FONTCONFIG_RUNTIME_DIR / "xdg-cache")
+    return browser_env
 
 
 def _split_minguo_date(d: str):
@@ -188,14 +205,12 @@ def _go_next_page(page: Page):
 
 def _capture_official_result_image(page: Page) -> bytes:
     """將司法院目前顯示的查詢結果頁擷取成高解析 PNG（不落地保存）。"""
-    # 不依賴 Render 的 fontconfig。直接從 Playwright 攔截的本地字型網址抓取
-    # OTF 二進位內容，再用 FontFace API 加入每一個官方 frame。這比單純插入
-    # @font-face 更可靠：若 CSP、CORS 或字型解析失敗，會在此明確拋錯，不會
-    # 繼續產出看似成功、實際全是方框的稽核圖片。
-    font_css = f"""
+    # Chromium 已透過執行期 Fontconfig 共用本地 Noto 字型。此處只指定字族，
+    # 不再把 16MB OTF 複製進每個 frame，避免 Render 記憶體尖峰重啟。
+    font_css = """
       html, body, input, button, select, textarea, table, th, td, a, span, div, p,
       h1, h2, h3, h4, h5, h6, label, li {{
-        font-family: 'FJUD Audit CJK', sans-serif !important;
+        font-family: 'Noto Sans CJK TC', sans-serif !important;
       }}
       /* 保留官網的圖示字型，避免導覽列圖示被中文字型取代成方框。 */
       [class*='fa-'], .fa, .fas, .far, .fal,
@@ -205,50 +220,21 @@ def _capture_official_result_image(page: Page) -> bytes:
       .fab {{
         font-family: 'Font Awesome 5 Brands' !important;
       }}
-    """
+    """.replace("{{", "{").replace("}}", "}")
     target_frames = [
         frame for frame in page.frames
         if "judgment.judicial.gov.tw" in frame.url
     ]
     if not target_frames:
         raise RuntimeError("找不到可套用中文字型的司法院頁面")
+    print(f"[FJUD:截圖] 套用共用中文字型（{len(target_frames)} 個頁框）", flush=True)
     for frame in target_frames:
-        loaded = frame.evaluate(
-            """
-            async (fontUrl) => {
-              const response = await fetch(fontUrl, {cache: 'force-cache'});
-              if (!response.ok) {
-                throw new Error(`中文字型下載失敗：HTTP ${response.status}`);
-              }
-              const fontBytes = await response.arrayBuffer();
-              if (fontBytes.byteLength < 10000000) {
-                throw new Error(`中文字型內容異常：${fontBytes.byteLength} bytes`);
-              }
-              const font = new FontFace(
-                'FJUD Audit CJK',
-                fontBytes,
-                {style: 'normal', weight: '400'}
-              );
-              await font.load();
-              document.fonts.add(font);
-              await document.fonts.ready;
-              return document.fonts.check(
-                '16px "FJUD Audit CJK"',
-                '司法院裁判書查詢賄賂政治獻金'
-              );
-            }
-            """,
-            FONT_ROUTE_URL,
-        )
-        if loaded is not True:
-            raise RuntimeError(f"司法院頁面中文字型驗證失敗：{frame.url}")
         frame.add_style_tag(content=font_css)
-        # 等待瀏覽器實際完成一次中文排版後再擷取。
         frame.evaluate(
             """
             async () => {
               await document.fonts.load(
-                '16px "FJUD Audit CJK"',
+                '16px "Noto Sans CJK TC"',
                 '司法院裁判書查詢賄賂政治獻金'
               );
               await document.fonts.ready;
@@ -256,6 +242,7 @@ def _capture_official_result_image(page: Page) -> bytes:
             }
             """
         )
+    print("[FJUD:截圖] 中文字型排版完成", flush=True)
     # iframe 預設高度可能只顯示畫面的一部分；列印前依內容高度展開，讓官方
     # 查詢條件及完整結果清單一起進入影像。使用 PNG 可避免 Chromium 在產生
     # 文字型 PDF 時因 Render 缺少繁體中文字型而出現亂碼。
@@ -273,6 +260,7 @@ def _capture_official_result_image(page: Page) -> bytes:
         )
     except Exception:
         pass
+    print("[FJUD:截圖] 開始擷取官方畫面", flush=True)
     return page.screenshot(full_page=True, type="png")
 
 
@@ -298,7 +286,7 @@ def search_fjud_keyword(
 
     results: List[Dict] = []
     evidence_images: List[bytes] = []
-    _verify_cjk_font()
+    browser_env = _chromium_font_env()
     print(f"[FJUD:{keyword}] 啟動瀏覽器", flush=True)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
@@ -306,19 +294,18 @@ def search_fjud_keyword(
             # Render 容器的 /dev/shm 空間有限，避免 Chromium 因共享記憶體不足
             # 被作業系統終止，導致前端收到空白 502 回應。
             args=["--disable-dev-shm-usage"],
+            env=browser_env,
         )
         context = browser.new_context(
             locale="zh-TW",
-            # 1440px 已足以清楚列印官方頁面；不再使用 1.5 倍像素，避免 PNG、
+            # 1280px 已足以清楚列印官方頁面；不再使用 1.5 倍像素，避免 PNG、
             # Base64 與 JSON 同時存在記憶體時產生不必要的尖峰。
-            viewport={"width": 1440, "height": 1000},
+            viewport={"width": 1280, "height": 900},
             device_scale_factor=1,
-            # 司法院頁面的 CSP 可能封鎖自訂字型來源；本頁只用於本次稽核
-            # 截圖，字型內容仍由本機白名單路由提供。
+            # 保留此設定，避免官網 CSP 阻擋稽核畫面需要加入的樣式。
             bypass_csp=True,
         )
         page = context.new_page()
-        _register_cjk_font_route(page)
         try:
             _fill_and_submit(page, company_name, person_name, date_from, date_to, keyword)
             print(f"[FJUD:{keyword}] 已完成查詢並切換再檢索分頁", flush=True)
@@ -360,12 +347,15 @@ def search_fjud(
     kws = keywords or DEFAULT_KEYWORDS
     all_results: List[Dict] = []
 
-    _verify_cjk_font()
+    browser_env = _chromium_font_env()
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(
+            headless=True,
+            args=["--disable-dev-shm-usage"],
+            env=browser_env,
+        )
         context = browser.new_context(locale="zh-TW", bypass_csp=True)
         page = context.new_page()
-        _register_cjk_font_route(page)
 
         try:
             for kw in kws:

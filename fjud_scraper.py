@@ -15,8 +15,9 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
 - 「裁判期間」是 6 個獨立 textbox：#dy1 #dm1 #dd1（起）、#dy2 #dm2 #dd2（迄），
   吃民國年，數字不用補零。
 - 查詢結果會出現在 <iframe id="iframe-data"> 裡面，不是主頁面本身。
-- 第一次查詢後不論顯示有資料或查無資料，都一律按一次左邊的「再檢索」
-  （#btnAgainQry）；只採用再檢索後的最終頁面與資料作為稽核結果。
+- 第一次查詢後不論顯示有資料或查無資料，都一律切換到左邊的「再檢索」
+  分頁（a[href="#tabsearchagain"]），顯示原檢索條件後才擷取稽核畫面。
+  #btnAgainQry 是分頁內的放大鏡搜尋按鈕，不可在空白狀態下觸發。
 - 查詢當下只取得清單（標題／日期／案由／明細連結）。使用者點擊「開啟裁判書」
   後直接前往司法院明細頁，如需 PDF 可使用瀏覽器的列印／另存為 PDF 功能。
 
@@ -99,21 +100,28 @@ def _fill_and_submit(page: Page, company_name: str, person_name: str, date_from:
     page.click("#btnQry")
     _wait_for_results_or_empty(page)
 
-    # 不論第一次查詢是「有資料」或「查無資料」，一律按一次「再檢索」，並且
-    # 只採用再檢索完成後的畫面與資料作為最終結果。這是本系統稽核流程的固定
-    # 規則，第一次顯示內容不擷取、不回傳。
+    # 「再檢索」有兩個不同元素：
+    #   1. a[href="#tabsearchagain"]：切換到使用者指定的再檢索分頁（正確）
+    #   2. #btnAgainQry：分頁內放大鏡按鈕，會用 #txtAKW 再送一次查詢（不可按）
     #
-    # #btnAgainQry 在部分狀態下會被 CSS 隱藏。Playwright 的 force=True 對
-    # display:none 元素仍可能拋出 Element is not visible，因此改由頁面內的
-    # HTMLElement.click() 直接觸發原生 click 事件。
-    # 若無法完成再檢索，不能悄悄沿用第一次結果，必須明確讓整次查詢失敗，避免
-    # 將未經再檢索確認的畫面當成稽核資料。
-    again_btn = page.locator("#btnAgainQry")
-    if again_btn.count() == 0:
-        raise RuntimeError("司法院頁面找不到「再檢索」按鈕")
-    again_btn.evaluate("element => element.click()")
-    page.wait_for_timeout(800)
-    _wait_for_results_or_empty(page, timeout=30000)
+    # 稽核畫面要保留右側第一次查詢的正式結果，同時讓左側顯示「再檢索」及
+    # 「原檢索條件」，所以此處只切換分頁，絕對不觸發 #btnAgainQry。
+    again_tab = page.locator("a[href='#tabsearchagain']").first
+    if again_tab.count() == 0:
+        raise RuntimeError("司法院頁面找不到「再檢索」分頁")
+    again_tab.wait_for(state="visible", timeout=10000)
+    again_tab.click(timeout=10000)
+
+    again_panel = page.locator("#tabsearchagain.active")
+    again_panel.wait_for(state="visible", timeout=10000)
+    page.locator("#txtAKW").wait_for(state="visible", timeout=10000)
+    original_conditions = page.locator("#dlQryCond")
+    original_conditions.wait_for(state="visible", timeout=10000)
+    conditions_text = original_conditions.inner_text()
+    if query not in conditions_text:
+        raise RuntimeError(
+            "司法院再檢索分頁未顯示本次全文檢索條件，停止產生稽核畫面"
+        )
 
     page.wait_for_timeout(POLITE_DELAY_MS)
 

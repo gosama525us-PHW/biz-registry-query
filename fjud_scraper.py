@@ -10,7 +10,9 @@ https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx 用 Playwright 模擬瀏�
 重要說明（已用真實瀏覽器現場核對過，非猜測）：
 - 全文內容欄位（#jud_kw）原生支援 "+"（或）"&"（且）"-"（不含）"()"（分組），
   (公司名稱+負責人)&賄賂 這種字串可以原封不動填進去查詢。
-- 「所有法院」是 <select id="jud_court"> 的預設值，完全不用手動操作。
+- <select id="jud_court" multiple> 的預設「所有法院」其實是空值選項；它與
+  使用者在多選清單中明確選取全部法院的送出條件不同。本模組會排除空值，
+  明確選取目前官網列出的每一個實際法院。
 - 案件類別「刑事」是 name="jud_sys" value="M" 的 checkbox。
 - 「裁判期間」是 6 個獨立 textbox：#dy1 #dm1 #dd1（起）、#dy2 #dm2 #dd2（迄），
   吃民國年，數字不用補零。
@@ -97,9 +99,36 @@ def _split_minguo_date(d: str):
     return str(int(y)), str(int(m)), str(int(day))
 
 
+def _select_all_courts(page: Page) -> List[str]:
+    """明確選取所有非空白法院，不使用預設的空值「所有法院」。"""
+    court_select = page.locator("#jud_court")
+    court_select.wait_for(state="attached", timeout=10000)
+    court_values = court_select.locator("option").evaluate_all(
+        "options => options.map(option => option.value).filter(value => value !== '')"
+    )
+    # 目前官網有 44 個實際法院。保留合理下限，若網站改版或選項異常就停止，
+    # 避免悄悄以不完整法院範圍產生稽核資料。
+    if len(court_values) < 40:
+        raise RuntimeError(
+            f"司法院實際法院選項數量異常：只取得 {len(court_values)} 個"
+        )
+    court_select.select_option(court_values)
+    selected_values = court_select.locator("option:checked").evaluate_all(
+        "options => options.map(option => option.value).filter(value => value !== '')"
+    )
+    if set(selected_values) != set(court_values):
+        raise RuntimeError(
+            f"司法院法院全選失敗：應選 {len(court_values)} 個，"
+            f"實際選取 {len(selected_values)} 個"
+        )
+    return court_values
+
+
 def _fill_and_submit(page: Page, company_name: str, person_name: str, date_from: str, date_to: str, keyword: str):
     page.goto(FJUD_URL, wait_until="networkidle")
 
+    selected_courts = _select_all_courts(page)
+    print(f"[FJUD:{keyword}] 已明確選取全部 {len(selected_courts)} 個法院", flush=True)
     page.check("input[name='jud_sys'][value='M']")
 
     y1, m1, d1 = _split_minguo_date(date_from)
@@ -138,6 +167,19 @@ def _fill_and_submit(page: Page, company_name: str, person_name: str, date_from:
     if query not in conditions_text:
         raise RuntimeError(
             "司法院再檢索分頁未顯示本次全文檢索條件，停止產生稽核畫面"
+        )
+    required_court_names = (
+        "憲法法庭",
+        "最高法院",
+        "臺灣臺北地方法院",
+        "福建連江地方法院",
+        "臺灣高雄少年及家事法院",
+    )
+    missing_courts = [name for name in required_court_names if name not in conditions_text]
+    if missing_courts:
+        raise RuntimeError(
+            "司法院原檢索條件未完整顯示全法院，缺少："
+            + "、".join(missing_courts)
         )
 
     page.wait_for_timeout(POLITE_DELAY_MS)

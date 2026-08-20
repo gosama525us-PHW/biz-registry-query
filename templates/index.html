@@ -94,12 +94,22 @@
         {% if result.related_party_export %}
           <div class="fjud-link-row">
             <button type="button" id="downloadRelatedParties" class="fjud-link-btn">
-              重新下載關係人TXT（{{ result.related_party_export.row_count }} 筆）
+              下載關係人查詢
             </button>
             <p class="data-source-note">
-              工商登記查詢完成時已自動下載 {{ result.related_party_export.filename }}；
-              若瀏覽器阻擋自動下載，可按此按鈕重新取得。
+              共 {{ result.related_party_export.row_count }} 筆關係人，下載檔名：{{ result.related_party_export.filename }}。
             </p>
+
+            {% if result.company_name and result.company_name != "無資料" and result.responsible_name and result.responsible_name != "無資料" %}
+              <form method="post" action="{{ url_for('fjud_search') }}" target="_blank" class="fjud-search-form">
+                <input type="hidden" name="company_name" value="{{ result.company_name }}">
+                <input type="hidden" name="person_name" value="{{ result.responsible_name }}">
+                <input type="hidden" name="date_from" value="{{ result.fjud_date_from }}">
+                <input type="hidden" name="date_to" value="{{ result.fjud_date_to }}">
+                <button type="submit" class="fjud-link-btn">查詢司法院裁判書（賄賂／政治獻金，近一年）</button>
+              </form>
+              <p class="data-source-note">查詢範圍：全法院刑事案件，裁判日期 {{ result.fjud_date_from }} ～ {{ result.fjud_date_to }}（近一年）。查詢通常需時 20～40 秒，請耐心等候結果分頁開啟。</p>
+            {% endif %}
           </div>
         {% endif %}
 
@@ -144,23 +154,6 @@
             </dd>
           </div>
         </dl>
-
-        {% if result.company_name and result.company_name != "無資料" and result.responsible_name and result.responsible_name != "無資料" %}
-        <div class="info-row fjud-link-row">
-          <dt>裁判書查詢</dt>
-        <dd>
-          <form method="post" action="{{ url_for('fjud_search') }}" target="_blank" class="fjud-search-form">
-            <input type="hidden" name="company_name" value="{{ result.company_name }}">
-            <input type="hidden" name="person_name" value="{{ result.responsible_name }}">
-            <input type="hidden" name="date_from" value="{{ result.fjud_date_from }}">
-            <input type="hidden" name="date_to" value="{{ result.fjud_date_to }}">
-            <button type="submit" class="fjud-link-btn">查詢司法院裁判書（賄賂／政治獻金，近一年）</button>
-          </form>
-          <p class="data-source-note">查詢範圍：全法院刑事案件，裁判日期 {{ result.fjud_date_from }} ～ {{ result.fjud_date_to }}（近一年）。查詢通常需時 20～40 秒，請耐心等候結果分頁開啟。</p>
-        </dd>
-        </div>
-        {% endif %}
-        
 
         <hr class="section-divider">
 
@@ -388,10 +381,6 @@
           downloadButton.addEventListener('click', downloadRelatedParties);
         }
 
-        // 每次成功送出工商查詢並載入結果頁時，自動下載一次。
-        window.addEventListener('load', () => {
-          setTimeout(downloadRelatedParties, 250);
-        }, { once: true });
       })();
     </script>
   {% endif %}

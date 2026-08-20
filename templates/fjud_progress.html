@@ -43,12 +43,55 @@
       for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
       const url=URL.createObjectURL(new Blob([bytes],{type:'image/png'})); blobs.push(url); return url;
     }
+    function openPrintPage(imageSrc, pageTitle){
+      const printWindow=window.open('', '_blank');
+      if(!printWindow){
+        alert('瀏覽器封鎖了列印視窗，請允許本網站開啟彈出式視窗後再試一次。');
+        return;
+      }
+      const doc=printWindow.document;
+      doc.open();
+      doc.write(`<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><title>司法院官方查詢結果</title><style>
+        @page{size:A4 landscape;margin:0}
+        *{box-sizing:border-box}
+        html,body{margin:0;padding:0;width:100%;min-height:100%;background:#fff}
+        body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .toolbar{position:fixed;z-index:10;top:14px;right:14px;display:flex;gap:8px;padding:8px;background:#fffffff0;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 2px 10px #0002}
+        .toolbar button{padding:9px 18px;border:0;border-radius:6px;background:#075985;color:#fff;font-size:16px;cursor:pointer}
+        .sheet{width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden}
+        .sheet img{display:block;width:100%;height:auto;max-width:none}
+        @media print{
+          html,body{width:297mm;height:210mm;overflow:hidden}
+          .toolbar{display:none!important}
+          .sheet{width:297mm;height:210mm;min-height:210mm;page-break-after:avoid}
+          .sheet img{width:297mm;height:210mm;object-fit:contain;object-position:center center}
+        }
+      </style></head><body><div class="toolbar"><button type="button" id="printButton">滿版列印</button></div><main class="sheet" id="sheet"></main></body></html>`);
+      doc.close();
+      doc.title=pageTitle;
+      const image=doc.createElement('img');
+      image.alt=pageTitle;
+      image.src=imageSrc;
+      doc.getElementById('sheet').appendChild(image);
+      doc.getElementById('printButton').addEventListener('click',()=>printWindow.print());
+    }
     function show(data){
       const card=document.createElement('section'); card.className='query-card';
       const title=document.createElement('h2'); title.textContent=`(${config.company_name}+${config.person_name})&${data.keyword}`; card.appendChild(title);
       const meta=document.createElement('p'); meta.className='status'; meta.textContent=`查詢完成：${data.queried_at}｜結果：${data.results.length} 筆`; card.appendChild(meta);
       const actions=document.createElement('div'); actions.className='actions';
-      data.evidence_images.forEach((image,i)=>{ const a=document.createElement('a'); a.href=imageUrl(image); a.target='_blank'; a.textContent=data.evidence_images.length>1?`查看／列印官方結果第 ${i+1} 頁`:'查看／列印官方結果'; actions.appendChild(a); });
+      data.evidence_images.forEach((image,i)=>{
+        const imageSrc=imageUrl(image);
+        const pageLabel=data.evidence_images.length>1?`查看／列印官方結果第 ${i+1} 頁`:'查看／列印官方結果';
+        const a=document.createElement('a');
+        a.href='#';
+        a.textContent=pageLabel;
+        a.addEventListener('click',event=>{
+          event.preventDefault();
+          openPrintPage(imageSrc,`${data.keyword}－${pageLabel}`);
+        });
+        actions.appendChild(a);
+      });
       card.appendChild(actions);
       if(!data.results.length){ const p=document.createElement('p'); p.textContent='司法院回傳：查無符合資料（仍可由上方按鈕開啟官方原始結果畫面）。'; card.appendChild(p); }
       else { const table=document.createElement('table'); table.className='case-list'; table.innerHTML='<thead><tr><th>裁判字號</th><th>日期</th><th>案由</th><th>官方頁面</th></tr></thead>'; const body=document.createElement('tbody'); data.results.forEach(r=>{const tr=document.createElement('tr'); [r.case_number,r.judgment_date||'－',r.case_title||'－'].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td)});const td=document.createElement('td');const a=document.createElement('a');a.href=r.detail_url;a.target='_blank';a.rel='noopener';a.textContent='開啟裁判書';td.appendChild(a);tr.appendChild(td);body.appendChild(tr)});table.appendChild(body);card.appendChild(table); }

@@ -797,6 +797,103 @@ def query_managers_local(tax_id: str) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# 關係人 TXT 匯出（不落地保存）
+# ---------------------------------------------------------------------------
+
+RELATED_PARTY_EXCLUDED_VALUES = {"", "缺額", "無資料"}
+
+
+def _clean_related_party_value(value) -> str:
+    """清理單一匯出值；逗號原樣保留，換行改空白以維持一筆一行。"""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[\r\n]+", " ", value).strip()
+
+
+def build_related_party_export(result: dict) -> dict:
+    """依本次查詢深度整理單一關係人 TXT，不寫入伺服器檔案。
+
+    每間查到的公司依序輸出：公司本身、負責人、每筆董監事姓名及其所代表
+    法人、經理人。第二、第三層比照辦理，第三層為絕對終點。英文姓名中的
+    逗號依使用者指定原樣輸出，不套用 CSV 引號規則。
+    """
+    rows = []
+    seen_pairs = set()
+    managers_cache = {}
+
+    def add_pair(company_name, related_name):
+        company = _clean_related_party_value(company_name)
+        related = _clean_related_party_value(related_name)
+        if company in RELATED_PARTY_EXCLUDED_VALUES:
+            return
+        if related in RELATED_PARTY_EXCLUDED_VALUES:
+            return
+        pair = (company, related)
+        if pair in seen_pairs:
+            return
+        seen_pairs.add(pair)
+        rows.append(pair)
+
+    def managers_for_company(company_data: dict, existing_managers=None) -> dict:
+        if isinstance(existing_managers, dict):
+            return existing_managers
+        tax_id = _clean_related_party_value(company_data.get("tax_id"))
+        if not is_valid_tax_id(tax_id):
+            return {"status": "ok", "records": []}
+        if tax_id not in managers_cache:
+            managers_cache[tax_id] = query_managers_local(tax_id)
+        return managers_cache[tax_id]
+
+    def add_company(company_data: dict, existing_managers=None):
+        if not isinstance(company_data, dict):
+            return
+        company_name = company_data.get("company_name")
+        add_pair(company_name, company_name)
+        add_pair(company_name, company_data.get("responsible_name"))
+        for director in company_data.get("director_items") or []:
+            if not isinstance(director, dict):
+                continue
+            # 維持工商登記畫面順序：董監事姓名後緊接該筆所代表法人。
+            add_pair(company_name, director.get("name"))
+            add_pair(company_name, director.get("juristic_person"))
+        managers_info = managers_for_company(company_data, existing_managers)
+        if managers_info.get("status") == "ok":
+            for manager in managers_info.get("records") or []:
+                if isinstance(manager, dict):
+                    add_pair(company_name, manager.get("name"))
+
+    # 第一層：使用 query_company() 已查好的經理人資料，避免重複讀取資料庫。
+    add_company(result, result.get("managers"))
+
+    # 第二層與第三層沿用既有巢狀結果；只有 status=="found" 才有完整公司資料。
+    second_layer = result.get("juristic_persons") or {}
+    for second in second_layer.get("results") or []:
+        if not isinstance(second, dict) or second.get("status") != "found":
+            continue
+        second_data = second.get("data") or {}
+        add_company(second_data)
+
+        # 深度上限固定為第三層；此處只輸出第三層，不再往下展開。
+        third_layer = second_data.get("sub_juristic_persons") or {}
+        for third in third_layer.get("results") or []:
+            if not isinstance(third, dict) or third.get("status") != "found":
+                continue
+            add_company(third.get("data") or {})
+
+    tax_id = _clean_related_party_value(result.get("tax_id"))
+    filename = f"{tax_id}.txt" if is_valid_tax_id(tax_id) else "關係人.txt"
+    lines = ["公司名稱,關係人名稱"]
+    lines.extend(f"{company},{related}" for company, related in rows)
+    # UTF-8 BOM＋Windows CRLF，兼顧記事本／Excel；末尾保留換行。
+    content = "\ufeff" + "\r\n".join(lines) + "\r\n"
+    return {
+        "filename": filename,
+        "content": content,
+        "row_count": len(rows),
+    }
+
+
 def query_company(tax_id: str):
     """
     合併呼叫「應用一」（基本資料）與「應用三」（所營事業）兩支 API，
@@ -1026,6 +1123,10 @@ def query():
                     # status 為何，皆不再往下查詢，僅供顯示。
 
         result["juristic_persons"] = second_layer
+
+    # 關係人 TXT 只使用本次已取得的第一至第三層結果。內容隨 HTML 回到瀏覽器，
+    # 由前端產生 Blob 下載；伺服器不建立、不保存任何 TXT 實體檔案。
+    result["related_party_export"] = build_related_party_export(result)
 
     # 「列印日期」：伺服器處理本次查詢當下的日期，動態產生（非固定文字），
     # 僅在有查詢結果時才顯示，比照 PDF 版面（查詢結果頁才有這行，首頁未查詢時不顯示）。

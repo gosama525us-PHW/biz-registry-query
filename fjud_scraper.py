@@ -180,18 +180,22 @@ def _go_next_page(page: Page):
 
 def _capture_official_result_image(page: Page) -> bytes:
     """將司法院目前顯示的查詢結果頁擷取成高解析 PNG（不落地保存）。"""
-    # Render 預設環境沒有繁體中文字型。建置階段由 install_cjk_font.py 安裝
-    # Noto Sans CJK TC；擷取前再對主頁及所有 iframe 強制指定該字型，避免官網
-    # 原始 CSS 指向伺服器不存在的中文字型而顯示方框。
+    # 不依賴 Render 的 fontconfig。直接從 Playwright 攔截的本地字型網址抓取
+    # OTF 二進位內容，再用 FontFace API 加入每一個官方 frame。這比單純插入
+    # @font-face 更可靠：若 CSP、CORS 或字型解析失敗，會在此明確拋錯，不會
+    # 繼續產出看似成功、實際全是方框的稽核圖片。
     font_css = f"""
-      @font-face {{
-        font-family: 'FJUD Audit CJK';
-        src: url('{FONT_ROUTE_URL}') format('opentype');
-        font-weight: 100 900;
-        font-style: normal;
-      }}
-      html, body, input, button, select, textarea, table, th, td, a, span, div, p {{
+      html, body, input, button, select, textarea, table, th, td, a, span, div, p,
+      h1, h2, h3, h4, h5, h6, label, li {{
         font-family: 'FJUD Audit CJK', sans-serif !important;
+      }}
+      /* 保留官網的圖示字型，避免導覽列圖示被中文字型取代成方框。 */
+      [class*='fa-'], .fa, .fas, .far, .fal,
+      [class*='icon-'], [class^='icon-'] {{
+        font-family: 'Font Awesome 5 Free', 'FontAwesome' !important;
+      }}
+      .fab {{
+        font-family: 'Font Awesome 5 Brands' !important;
       }}
     """
     target_frames = [
@@ -201,9 +205,49 @@ def _capture_official_result_image(page: Page) -> bytes:
     if not target_frames:
         raise RuntimeError("找不到可套用中文字型的司法院頁面")
     for frame in target_frames:
+        loaded = frame.evaluate(
+            """
+            async (fontUrl) => {
+              const response = await fetch(fontUrl, {cache: 'force-cache'});
+              if (!response.ok) {
+                throw new Error(`中文字型下載失敗：HTTP ${response.status}`);
+              }
+              const fontBytes = await response.arrayBuffer();
+              if (fontBytes.byteLength < 10000000) {
+                throw new Error(`中文字型內容異常：${fontBytes.byteLength} bytes`);
+              }
+              const font = new FontFace(
+                'FJUD Audit CJK',
+                fontBytes,
+                {style: 'normal', weight: '400'}
+              );
+              await font.load();
+              document.fonts.add(font);
+              await document.fonts.ready;
+              return document.fonts.check(
+                '16px "FJUD Audit CJK"',
+                '司法院裁判書查詢賄賂政治獻金'
+              );
+            }
+            """,
+            FONT_ROUTE_URL,
+        )
+        if loaded is not True:
+            raise RuntimeError(f"司法院頁面中文字型驗證失敗：{frame.url}")
         frame.add_style_tag(content=font_css)
-        frame.evaluate("document.fonts.load('16px FJUD Audit CJK')")
-        frame.evaluate("document.fonts.ready")
+        # 等待瀏覽器實際完成一次中文排版後再擷取。
+        frame.evaluate(
+            """
+            async () => {
+              await document.fonts.load(
+                '16px "FJUD Audit CJK"',
+                '司法院裁判書查詢賄賂政治獻金'
+              );
+              await document.fonts.ready;
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            }
+            """
+        )
     # iframe 預設高度可能只顯示畫面的一部分；列印前依內容高度展開，讓官方
     # 查詢條件及完整結果清單一起進入影像。使用 PNG 可避免 Chromium 在產生
     # 文字型 PDF 時因 Render 缺少繁體中文字型而出現亂碼。
@@ -253,6 +297,9 @@ def search_fjud_keyword(
             locale="zh-TW",
             viewport={"width": 1600, "height": 1200},
             device_scale_factor=1.5,
+            # 司法院頁面的 CSP 可能封鎖自訂字型來源；本頁只用於本次稽核
+            # 截圖，字型內容仍由本機白名單路由提供。
+            bypass_csp=True,
         )
         page = context.new_page()
         _register_cjk_font_route(page)
@@ -293,7 +340,7 @@ def search_fjud(
     _verify_cjk_font()
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        context = browser.new_context(locale="zh-TW")
+        context = browser.new_context(locale="zh-TW", bypass_csp=True)
         page = context.new_page()
         _register_cjk_font_route(page)
 

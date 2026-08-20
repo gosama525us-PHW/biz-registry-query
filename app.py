@@ -1049,7 +1049,8 @@ def fjud_search():
     （全法院、案件類別刑事）。
 
     本路由先顯示進度頁，再由前端依序呼叫 /fjud-search-step 查詢兩組關鍵字。
-    每組第一次結果出現後一律執行「再檢索」，只擷取再檢索後的最終官方頁面；
+    每組第一次結果出現後一律切換到「再檢索」分頁，確認原檢索條件後擷取
+    官方頁面（不按分頁內的放大鏡再次送出查詢）；
     擷取的官方 PNG 畫面以 base64 回到當下瀏覽器，不寫入伺服器磁碟或資料庫。
     """
     company_name = request.form.get("company_name", "").strip()
@@ -1100,11 +1101,19 @@ def fjud_search_step():
             "evidence_images": [base64.b64encode(p).decode("ascii") for p in images],
             "queried_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
-    except Exception:
+    except Exception as exc:
         import traceback
-        print(f"=== /fjud-search-step {keyword} 查詢失敗 ===", flush=True)
+        error_ref = datetime.now().strftime("%H%M%S%f")[-10:]
+        print(
+            f"=== /fjud-search-step {keyword} 查詢失敗 "
+            f"[{error_ref}] {type(exc).__name__} ===",
+            flush=True,
+        )
         traceback.print_exc()
-        return jsonify({"ok": False, "error": "司法院查詢失敗，請稍後再試。"}), 502
+        return jsonify({
+            "ok": False,
+            "error": f"司法院查詢失敗（錯誤代碼：{error_ref}），請查看 Render Log。",
+        }), 502
 
 
 @app.errorhandler(404)

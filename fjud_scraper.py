@@ -299,12 +299,20 @@ def search_fjud_keyword(
     results: List[Dict] = []
     evidence_images: List[bytes] = []
     _verify_cjk_font()
+    print(f"[FJUD:{keyword}] 啟動瀏覽器", flush=True)
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(
+            headless=True,
+            # Render 容器的 /dev/shm 空間有限，避免 Chromium 因共享記憶體不足
+            # 被作業系統終止，導致前端收到空白 502 回應。
+            args=["--disable-dev-shm-usage"],
+        )
         context = browser.new_context(
             locale="zh-TW",
-            viewport={"width": 1600, "height": 1200},
-            device_scale_factor=1.5,
+            # 1440px 已足以清楚列印官方頁面；不再使用 1.5 倍像素，避免 PNG、
+            # Base64 與 JSON 同時存在記憶體時產生不必要的尖峰。
+            viewport={"width": 1440, "height": 1000},
+            device_scale_factor=1,
             # 司法院頁面的 CSP 可能封鎖自訂字型來源；本頁只用於本次稽核
             # 截圖，字型內容仍由本機白名單路由提供。
             bypass_csp=True,
@@ -313,16 +321,23 @@ def search_fjud_keyword(
         _register_cjk_font_route(page)
         try:
             _fill_and_submit(page, company_name, person_name, date_from, date_to, keyword)
+            print(f"[FJUD:{keyword}] 已完成查詢並切換再檢索分頁", flush=True)
             page_idx = 1
             while True:
                 results.extend(_parse_current_page(page, keyword))
-                evidence_images.append(_capture_official_result_image(page))
+                image = _capture_official_result_image(page)
+                evidence_images.append(image)
+                print(
+                    f"[FJUD:{keyword}] 第 {page_idx} 頁截圖完成：{len(image)} bytes",
+                    flush=True,
+                )
                 if page_idx >= MAX_PAGES_PER_KEYWORD or not _has_next_page(page):
                     break
                 _go_next_page(page)
                 page_idx += 1
         finally:
             browser.close()
+    print(f"[FJUD:{keyword}] 完成，共 {len(results)} 筆", flush=True)
     return results, evidence_images
 
 
